@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#041d13" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Big Two" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-180.png" />
+    <title>Big Two · Jokers Wild</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="solo">
+    <header class="topbar">
+      <h1>Big Two <span>4 jokers wild</span></h1>
+      <div class="controls">
+        <div class="mode" role="group" aria-label="Mode">
+          <button type="button" id="modeSolo" class="seg active">Solo</button>
+          <button type="button" id="modeOnline" class="seg">Online</button>
+        </div>
+        <label class="solo-only"
+          >AI
+          <select id="level">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <span id="record" class="record solo-only"></span>
+        <span id="who" class="record online-only"></span>
+        <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
+        <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
+        <button type="button" id="logoutBtn" class="ghost online-only" hidden>Log out</button>
+        <button type="button" id="rulesBtn" class="ghost">Rules</button>
+        <button type="button" id="newBtn" class="solo-only">New game</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <main class="table" id="tableMain" aria-label="Game table">
+        <section class="seat seat-north" id="seat-2"></section>
+        <section class="seat seat-west" id="seat-1"></section>
+        <section class="seat seat-east" id="seat-3"></section>
+
+        <section class="center">
+          <div id="trickCards" class="trick-cards"></div>
+          <div id="trickLabel" class="trick-label"></div>
+          <div id="status" class="status"></div>
+        </section>
+
+        <section class="me">
+          <div class="me-head">
+            <div id="seat-0" class="my-action"></div>
+            <div id="selInfo" class="sel-info"></div>
+          </div>
+          <div id="playedFan" class="played-fan"></div>
+          <div id="hand" class="hand"></div>
+          <div class="actions">
+            <button type="button" id="playBtn" class="primary" title="Enter">Play</button>
+            <button type="button" id="passBtn" title="P">Pass</button>
+            <button type="button" id="hintBtn" class="ghost solo-only" title="H">Hint</button>
+            <button type="button" id="clearBtn" class="ghost" title="Esc">Clear</button>
+            <button type="button" id="sortBtn" class="ghost">Sort: rank</button>
+            <button type="button" id="leaveBtn" class="ghost online-only" title="Your seat is kept until the game ends">
+              Back to lobby
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <main class="lobby" id="lobby" aria-label="Lobby" hidden>
+        <div id="lobbyHome" class="lobby-grid">
+          <section class="panel-card">
+            <h2>Play online</h2>
+            <p class="muted">
+              Signed in as <b id="lobbyUser"></b>. One game runs at a time; empty seats are played by the computer.
+            </p>
+            <div id="gameBox"></div>
+            <div class="row" id="createRow" hidden>
+              <label
+                >AI level
+                <select id="newLevel">
+                  <option value="easy">Easy</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+              <button type="button" id="createBtn" class="primary">Create game</button>
+            </div>
+            <p id="lobbyMsg" class="bad"></p>
+          </section>
+          <section class="panel-card">
+            <h2>Leaderboard</h2>
+            <div class="row">
+              <label class="grow"
+                >Season
+                <select id="lbSeason"></select
+              ></label>
+            </div>
+            <div class="row">
+              <button type="button" id="lbHuman" class="seg active">Humans only</button>
+              <button type="button" id="lbAi" class="seg">With computer players</button>
+              <button type="button" id="lbSort" class="ghost">Ranked by: total points</button>
+            </div>
+            <p id="lbSeasonInfo" class="muted"></p>
+            <table class="lb">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Games</th>
+                  <th>Wins</th>
+                  <th>Win %</th>
+                  <th>Points</th>
+                  <th>Per game</th>
+                </tr>
+              </thead>
+              <tbody id="lbBody"></tbody>
+            </table>
+            <p class="muted">
+              Points are running totals (what you have won minus what you have paid). Games with computer players are
+              scored on their own board.
+            </p>
+          </section>
+        </div>
+        <section id="waitRoom" class="panel-card" hidden>
+          <h2>Waiting room</h2>
+          <p id="waitInfo" class="muted"></p>
+          <ul id="waitSeats" class="list"></ul>
+          <div class="row">
+            <button type="button" id="startBtn" class="primary">Start game</button>
+            <button type="button" id="waitLeave">Leave table</button>
+          </div>
+          <p id="waitMsg" class="bad"></p>
+        </section>
+      </main>
+
+      <main class="lobby admin" id="admin" aria-label="Admin" hidden>
+        <div class="lobby-grid">
+          <section class="panel-card">
+            <h2>Game</h2>
+            <div id="adminGame"></div>
+            <h3>Registration</h3>
+            <div class="row">
+              <span id="regState"></span>
+              <button type="button" id="regBtn"></button>
+            </div>
+            <h3>Server</h3>
+            <p id="adminStats" class="muted"></p>
+            <p id="adminMsg" class="bad"></p>
+          </section>
+          <section class="panel-card">
+            <h2>Create a user</h2>
+            <p class="muted">Give them the temporary password; they can change it with the Password button.</p>
+            <div class="field">
+              <label for="newUserName">Name</label
+              ><input type="text" id="newUserName" maxlength="20" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="newUserPw">Temporary password (min 10 characters)</label>
+              <div class="row">
+                <input type="text" id="newUserPw" autocomplete="off" maxlength="200" /><button
+                  type="button"
+                  id="genPwBtn"
+                  class="ghost"
+                >
+                  Generate
+                </button>
+              </div>
+            </div>
+            <label class="check"><input type="checkbox" id="newUserAdmin" /> Make this user an admin</label>
+            <div class="row"><button type="button" id="createUserBtn" class="primary">Create user</button></div>
+            <p id="createUserMsg" class="muted"></p>
+          </section>
+        </div>
+        <section class="panel-card">
+          <h2>Seasons</h2>
+          <p class="muted">
+            A season is a date range. A game counts in the season in which it <b>finished</b>. Seasons cannot overlap;
+            gaps are fine (games in a gap only count in All-time). Leave the end empty for "until I set one". Times are
+            in your local time zone.
+          </p>
+          <table class="lb users">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Games</th>
+                <th>Champion</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="seasonsBody"></tbody>
+          </table>
+          <h3 id="seasonFormTitle">New season</h3>
+          <div class="row season-form">
+            <div class="field">
+              <label for="seasonName">Name</label
+              ><input type="text" id="seasonName" maxlength="40" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="seasonStart">Starts</label><input id="seasonStart" type="datetime-local" />
+            </div>
+            <div class="field">
+              <label for="seasonEnd">Ends (optional)</label><input id="seasonEnd" type="datetime-local" />
+            </div>
+          </div>
+          <div class="row">
+            <button type="button" id="seasonSave" class="primary">Create season</button>
+            <button type="button" id="seasonCancel" class="ghost" hidden>Cancel edit</button>
+          </div>
+          <p id="seasonMsg" class="muted"></p>
+        </section>
+        <section class="panel-card">
+          <h2>Users</h2>
+          <table class="lb users">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Games</th>
+                <th>Last login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </section>
+        <section class="panel-card">
+          <h2>Audit log</h2>
+          <ul id="auditList" class="list"></ul>
+        </section>
+      </main>
+
+      <aside class="log" aria-label="Play log and chat">
+        <h2>Play log</h2>
+        <ol id="log"></ol>
+        <section id="chat" class="chat" hidden>
+          <h2>Chat</h2>
+          <ol id="chatMsgs"></ol>
+          <div class="row">
+            <input type="text" id="chatInput" maxlength="300" placeholder="Say something…" autocomplete="off" />
+            <button type="button" id="chatSend">Send</button>
+          </div>
+          <p id="chatErr" class="bad"></p>
+        </section>
+      </aside>
+    </div>
+
+    <div id="overlay" class="overlay" hidden>
+      <div class="panel">
+        <h2 id="endTitle">Round over</h2>
+        <div id="endHands"></div>
+        <p id="endNote" class="muted"></p>
+        <div class="row">
+          <button type="button" id="againBtn" class="primary">Play again</button>
+          <button type="button" id="endLeave" class="online-only">Leave table</button>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="resetDlg">
+      <h2>Set a temporary password</h2>
+      <p class="muted">For <b id="resetName"></b>. They are signed out everywhere and must use this to sign in.</p>
+      <div class="field">
+        <label for="resetPw">New password (min 10 characters)</label>
+        <div class="row">
+          <input type="text" id="resetPw" autocomplete="off" maxlength="200" /><button
+            type="button"
+            id="resetGen"
+            class="ghost"
+          >
+            Generate
+          </button>
+        </div>
+      </div>
+      <p id="resetErr" class="bad"></p>
+      <div class="row">
+        <button type="button" id="resetOk" class="primary">Set password</button>
+        <button type="button" id="resetCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="pwDlg">
+      <h2>Change your password</h2>
+      <div class="field">
+        <label for="pwCurrent">Current password</label
+        ><input id="pwCurrent" type="password" autocomplete="current-password" maxlength="200" />
+      </div>
+      <div class="field">
+        <label for="pwNext">New password (min 10 characters)</label
+        ><input id="pwNext" type="password" autocomplete="new-password" maxlength="200" />
+      </div>
+      <p id="pwErr" class="bad"></p>
+      <div class="row">
+        <button type="button" id="pwOk" class="primary">Change password</button>
+        <button type="button" id="pwCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="loginDlg">
+      <h2>Sign in to play online</h2>
+      <p id="loginHelp" class="muted">Accounts are created by an admin. Enter the name and password you were given.</p>
+      <div class="field">
+        <label for="loginName">Name</label><input type="text" id="loginName" autocomplete="username" maxlength="20" />
+      </div>
+      <div class="field">
+        <label for="loginPw">Password</label
+        ><input id="loginPw" type="password" autocomplete="current-password" maxlength="200" />
+      </div>
+      <p id="loginErr" class="bad"></p>
+      <div class="row">
+        <button type="button" id="loginBtn" class="primary">Log in</button>
+        <button type="button" id="registerBtn">Create account</button>
+        <button type="button" id="loginCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="rules">
+      <h2>Rules</h2>
+      <ul>
+        <li>56 cards: a standard deck plus 4 jokers. Everyone gets 14 cards.</li>
+        <li>Ranks: 3 &lt; 4 &lt; … &lt; K &lt; A &lt; 2. Suits break ties: ♦ &lt; ♣ &lt; ♥ &lt; ♠.</li>
+        <li>The holder of 3♦ leads first, and that play must include the 3♦.</li>
+        <li>
+          Play a single, pair, triple or five-card hand. Followers must play the same number of cards and beat it, or
+          pass. Once you pass you're out until the trick ends.
+        </li>
+        <li>
+          You can always pass, even with the lead: the lead moves to the next player. If all four players pass the lead
+          in a row, it's back with whoever had it first, and they must play. (The opening 3♦ play can't be passed.)
+        </li>
+        <li>
+          <b>Last card:</b> if the next player has one card left, any single you play must be your highest (any joker
+          counts as highest). Pairs and five-card hands are unaffected.
+        </li>
+        <li>
+          Five-card hands, low to high: straight, flush, full house, four of a kind + kicker, straight flush, five of a
+          kind.
+        </li>
+        <li>
+          A straight is worth its highest card, and the ace and 2 are low in the two wrap-around straights: A-2-3-4-5
+          (5-high) and 2-3-4-5-6 (6-high) are the weakest, then 3-4-5-6-7 up to 10-J-Q-K-A on top. J-Q-K-A-2 is not
+          allowed. Equal straights are decided by the suit of the highest card.
+        </li>
+        <li>Flushes compare highest card first, then the next, then suit.</li>
+        <li>
+          <b>Jokers are wild:</b> each one becomes whatever card makes its hand strongest. A joker played alone beats
+          any natural single, but jokers don't beat each other.
+        </li>
+        <li>
+          <b>The real card beats the joker:</b> if two plays would otherwise be equal, the one with more real cards
+          wins. So 5♣ 5♠ beats 5♦ + joker, and real 2♣ 2♠ beats two jokers.
+        </li>
+        <li>
+          If nobody left in the trick can beat a play, they're all passed automatically and the player who made it leads
+          again straight away.
+        </li>
+        <li>The first player to empty their hand wins the round.</li>
+        <li>
+          <b>Online scoring:</b> each loser pays the winner per card left in hand: 1 point a card for 1-7 cards, 2 for
+          8-10, 3 for 11-13, and 4 a card if they never played. Going out with a straight flush or five of a kind
+          doubles every payment. Scores always add up to zero.
+        </li>
+        <li>
+          <b>Online games:</b> only one game runs at a time and an admin starts it. Once a game has started it belongs
+          to the people seated until it finishes or an admin cancels it (a cancelled game is not scored). There is no
+          turn timer: the game waits for anyone who is offline, and you can go back to the lobby and return to your seat
+          at any time.
+        </li>
+        <li><b>Chat</b> is available while two or more people are at the table.</li>
+      </ul>
+      <p class="keys">Keys: Enter = play · P = pass · H = hint (solo only) · Esc = clear selection</p>
+      <form method="dialog"><button type="submit" class="primary">Got it</button></form>
+    </dialog>
+
+    <script type="module" src="src/ui.js"></script>
+  </body>
+</html>
