@@ -1,0 +1,7 @@
+# One line-ending convention in the repository (LF), whatever the platform;
+# Windows checkouts get LF too so formatters and diffs agree.
+* text=auto eol=lf
+
+# Never touch binary files
+*.png binary
+*.ico binary

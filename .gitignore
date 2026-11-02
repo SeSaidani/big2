@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Runtime data. The SQLite database holds accounts, password hashes, sessions,
+# scores and the live game: it must never be committed.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs, test output, screenshots from end-to-end runs
+*.log
+npm-debug.log*
+coverage/
+.nyc_output/
+e2e/out/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code: personal, per-machine settings
+.claude/settings.local.json

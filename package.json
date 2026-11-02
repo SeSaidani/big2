@@ -1,0 +1,38 @@
+{
+  "name": "big2-jokers",
+  "version": "1.0.0",
+  "description": "Big Two (Hong Kong rules) with four wild jokers: solo against the computer, or online with accounts, seasons and leaderboards.",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SeSaidani/big2.git"
+  },
+  "scripts": {
+    "start": "node tools/serve.js",
+    "online": "node server/index.js",
+    "admin": "node server/admin.js",
+    "test": "node --test \"test/*.test.js\"",
+    "arena": "node tools/arena.js",
+    "e2e": "node e2e/run.mjs",
+    "lint": "npm run lint:js && npm run lint:css && npm run lint:html",
+    "lint:js": "eslint .",
+    "lint:css": "stylelint \"**/*.css\"",
+    "lint:html": "html-validate index.html",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run lint && npm test"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "html-validate": "^11.18.0",
+    "prettier": "^3.9.10",
+    "stylelint": "^17.16.0",
+    "stylelint-config-standard": "^40.0.0"
+  }
+}
