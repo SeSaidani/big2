@@ -51,7 +51,7 @@ async function main() {
   );
   check('registration is closed by default', (await A.text('regState')).startsWith('Closed'));
   await A.ev(
-    `document.getElementById('newUserName').value='alice'; document.getElementById('newUserPw').value=${JSON.stringify(TEMP_PW)}; document.getElementById('createUserBtn').click()`,
+    `document.getElementById('newUserName').value='alice'; document.getElementById('newUserPw').value=${JSON.stringify(TEMP_PW)}; document.getElementById('newUserPhone').value='+447700900002'; document.getElementById('createUserBtn').click()`,
   );
   await A.waitFor(
     `[...document.querySelectorAll('#usersBody tr')].some(r => r.children[0].textContent === 'alice')`,

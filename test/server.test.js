@@ -18,6 +18,7 @@ import {
   checkNoLeak,
   driveEasy,
   seatPlayers,
+  nextPhone,
 } from './support.js';
 
 const tableOf = (ctx) => ctx.app.lobby.table;
@@ -27,7 +28,7 @@ test('accounts: registration is closed by default; opened by the admin it works'
   try {
     const anon = new Client(ctx.base);
     assert.equal((await anon.req('GET', '/api/config')).json.registrationOpen, false);
-    const closed = await anon.req('POST', '/api/register', { name: 'Alice', password: PASSWORD });
+    const closed = await anon.req('POST', '/api/register', { name: 'Alice', password: PASSWORD, phone: nextPhone() });
     assert.equal(closed.status, 403);
 
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
@@ -35,23 +36,37 @@ test('accounts: registration is closed by default; opened by the admin it works'
     assert.equal((await anon.req('GET', '/api/config')).json.registrationOpen, true);
 
     const a = new Client(ctx.base);
-    assert.equal((await a.req('POST', '/api/register', { name: 'Alice', password: PASSWORD })).status, 201);
+    assert.equal(
+      (await a.req('POST', '/api/register', { name: 'Alice', password: PASSWORD, phone: nextPhone() })).status,
+      201,
+    );
     assert.equal((await a.req('GET', '/api/me')).json.user.name, 'Alice');
     assert.equal((await a.req('GET', '/api/me')).json.user.isAdmin, false);
     assert.equal(
-      (await new Client(ctx.base).req('POST', '/api/register', { name: 'alice', password: PASSWORD })).status,
+      (
+        await new Client(ctx.base).req('POST', '/api/register', {
+          name: 'alice',
+          password: PASSWORD,
+          phone: nextPhone(),
+        })
+      ).status,
       409,
     );
     for (const bad of [
-      { name: 'x', password: PASSWORD },
+      { name: 'x', password: PASSWORD, phone: nextPhone() },
       { name: 'ok_name', password: 'short' },
-      { name: 'bad name!', password: PASSWORD },
+      { name: 'bad name!', password: PASSWORD, phone: nextPhone() },
     ]) {
       assert.equal((await new Client(ctx.base).req('POST', '/api/register', bad)).status, 400);
     }
     // Self-registration never makes an admin, even if asked.
     const sneaky = new Client(ctx.base);
-    await sneaky.req('POST', '/api/register', { name: 'sneaky', password: PASSWORD, isAdmin: true });
+    await sneaky.req('POST', '/api/register', {
+      name: 'sneaky',
+      password: PASSWORD,
+      phone: nextPhone(),
+      isAdmin: true,
+    });
     assert.equal((await sneaky.req('GET', '/api/me')).json.user.isAdmin, false);
 
     const b = new Client(ctx.base);

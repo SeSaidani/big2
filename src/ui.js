@@ -578,6 +578,7 @@ function beginOnline() {
   $('lobbyUser').textContent = user.name;
   show('logoutBtn', true);
   show('passwordBtn', true);
+  show('phoneBtn', true);
   show('adminBtn', user.isAdmin);
   adminView = false;
   viewingLobby = false;
@@ -587,6 +588,8 @@ function beginOnline() {
   refreshSeasons();
   refreshLeaderboard();
   route();
+  // Everyone needs a verified number to play online: ask straight away.
+  if (user.phoneRequired) openPhoneDialog();
 }
 
 // (Re)open the live stream. The server answers every connection with the
@@ -653,6 +656,7 @@ function sessionLost() {
   table = null;
   show('logoutBtn', false);
   show('passwordBtn', false);
+  show('phoneBtn', false);
   show('adminBtn', false);
   openLogin('Your session has ended. Please sign in again.');
 }
@@ -661,6 +665,7 @@ function openLogin(message) {
   $('loginErr').textContent = message;
   $('loginPw').value = '';
   show('registerBtn', registrationOpen);
+  show('loginPhoneField', registrationOpen);
   $('loginHelp').textContent = registrationOpen
     ? 'Sign in, or create an account (3-20 letters, digits, _ or -; password of at least 10 characters).'
     : 'Accounts are created by an admin. Enter the name and password you were given.';
@@ -671,7 +676,12 @@ function openLogin(message) {
 async function submitAuth(kind) {
   $('loginErr').textContent = '';
   try {
-    user = (await api[kind]($('loginName').value.trim(), $('loginPw').value)).user;
+    const name = $('loginName').value.trim();
+    const reply =
+      kind === 'register'
+        ? await api.register(name, $('loginPw').value, $('loginPhone').value)
+        : await api.login(name, $('loginPw').value);
+    user = reply.user;
   } catch (err) {
     $('loginErr').textContent = err.message;
     return;
@@ -711,6 +721,22 @@ function renderLobbyHome() {
     if (cls) p.className = cls;
     box.appendChild(p);
   };
+  // Nobody joins or creates a game without a verified number: that is how we tell them it is their turn.
+  if (user.phoneRequired) {
+    show('createRow', false);
+    line(
+      user.phone
+        ? 'Confirm your phone number to play: we will text you a code.'
+        : 'Add your phone number to play online: we text you when it is your turn.',
+    );
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'primary';
+    b.textContent = user.phone ? 'Confirm my number' : 'Add my number';
+    b.addEventListener('click', openPhoneDialog);
+    box.appendChild(b);
+    return;
+  }
   // A finished round's result does not block a new game (the server replaces it).
   show('createRow', !!user.isAdmin && (!g || g.status === 'done'));
   if (!g) {
@@ -1239,6 +1265,7 @@ function renderAdmin(o, users, entries) {
     };
     cell(u.name);
     cell([u.isAdmin ? 'admin' : 'player', u.disabled ? 'disabled' : ''].filter(Boolean).join(', '));
+    cell(u.phone ? `${u.phone} (${u.phoneVerified ? 'verified' : 'not verified'})` : 'none');
     cell(u.games);
     cell(u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'never');
     const actions = document.createElement('td');
@@ -1246,13 +1273,16 @@ function renderAdmin(o, users, entries) {
     const reset = document.createElement('button');
     reset.textContent = 'Reset password';
     reset.addEventListener('click', () => openReset(u));
+    const setPhone = document.createElement('button');
+    setPhone.textContent = 'Set phone';
+    setPhone.addEventListener('click', () => openAdminPhone(u));
     const dis = armedButton(u.disabled ? 'Enable' : 'Disable', () =>
       adminDo(() => api.admin.setDisabled(u.id, !u.disabled)),
     );
     const role = armedButton(u.isAdmin ? 'Remove admin' : 'Make admin', () =>
       adminDo(() => api.admin.setAdmin(u.id, !u.isAdmin)),
     );
-    actions.append(reset, dis, role);
+    actions.append(reset, setPhone, dis, role);
     tr.appendChild(actions);
     body.appendChild(tr);
   }
@@ -1292,16 +1322,97 @@ async function submitCreateUser() {
   msg.textContent = '';
   try {
     const name = $('newUserName').value.trim();
-    await api.admin.createUser(name, $('newUserPw').value, $('newUserAdmin').checked);
-    msg.textContent = `Created ${name}. Give them the temporary password.`;
+    await api.admin.createUser(name, $('newUserPw').value, $('newUserPhone').value, $('newUserAdmin').checked);
+    msg.textContent = `Created ${name}. Give them the temporary password; they confirm their number when they sign in.`;
     $('newUserName').value = '';
     $('newUserPw').value = '';
+    $('newUserPhone').value = '';
     $('newUserAdmin').checked = false;
   } catch (err) {
     msg.className = 'bad';
     msg.textContent = err.message;
     return;
   }
+  await refreshAdmin();
+}
+
+// ---- my phone number ----
+function renderPhoneDialog() {
+  $('phoneCurrent').textContent = user.phone || 'none';
+  $('phoneState').textContent = user.phone ? (user.phoneVerified ? '(verified)' : '(not verified yet)') : '';
+  show('phoneCodeField', !!user.needsCode);
+  $('smsToggle').checked = !!user.smsEnabled;
+}
+
+function openPhoneDialog() {
+  $('phoneMsg').textContent = '';
+  $('phoneInput').value = '';
+  $('phoneCode').value = '';
+  renderPhoneDialog();
+  if (!$('phoneDlg').open) $('phoneDlg').showModal();
+}
+
+async function phoneDo(fn, okText) {
+  const msg = $('phoneMsg');
+  msg.className = 'bad';
+  msg.textContent = '';
+  try {
+    const reply = await fn();
+    if (reply && reply.user) user = reply.user;
+    if (okText) {
+      msg.className = 'muted';
+      msg.textContent = okText(reply);
+    }
+  } catch (err) {
+    msg.textContent = err.message;
+    return false;
+  } finally {
+    renderPhoneDialog();
+    route();
+  }
+  return true;
+}
+
+const savePhone = () =>
+  phoneDo(
+    () => api.setPhone($('phoneInput').value),
+    (r) => (r.codeSent ? 'Saved. We texted you a 6-digit code: enter it below.' : 'Saved.'),
+  );
+const verifyPhoneCode = async () => {
+  if (
+    await phoneDo(
+      () => api.verifyPhone($('phoneCode').value),
+      () => 'Verified. Thank you.',
+    )
+  ) {
+    $('phoneCode').value = '';
+  }
+};
+const resendPhoneCode = () =>
+  phoneDo(
+    () => api.resendCode(),
+    () => 'A new code is on its way.',
+  );
+const toggleSms = () => phoneDo(() => api.setSms($('smsToggle').checked));
+
+// ---- an admin sets someone's number ----
+let adminPhoneTarget = null;
+function openAdminPhone(u) {
+  adminPhoneTarget = u;
+  $('adminPhoneName').textContent = u.name;
+  $('adminPhoneInput').value = '';
+  $('adminPhoneErr').textContent = '';
+  $('adminPhoneDlg').showModal();
+}
+
+async function submitAdminPhone() {
+  try {
+    await api.admin.setPhone(adminPhoneTarget.id, $('adminPhoneInput').value);
+  } catch (err) {
+    $('adminPhoneErr').textContent = err.message;
+    return;
+  }
+  $('adminPhoneDlg').close();
   await refreshAdmin();
 }
 
@@ -1343,6 +1454,7 @@ $('logoutBtn').addEventListener('click', async () => {
   user = null;
   show('logoutBtn', false);
   show('passwordBtn', false);
+  show('phoneBtn', false);
   show('adminBtn', false);
   enterSolo();
 });
@@ -1351,6 +1463,20 @@ $('adminBtn').addEventListener('click', () => {
   route();
   if (adminView) refreshAdmin();
 });
+$('phoneBtn').addEventListener('click', openPhoneDialog);
+$('phoneSave').addEventListener('click', savePhone);
+$('phoneVerify').addEventListener('click', verifyPhoneCode);
+$('phoneResend').addEventListener('click', resendPhoneCode);
+$('smsToggle').addEventListener('change', toggleSms);
+$('phoneClose').addEventListener('click', () => $('phoneDlg').close());
+$('adminPhoneOk').addEventListener('click', submitAdminPhone);
+$('adminPhoneCancel').addEventListener('click', () => $('adminPhoneDlg').close());
+for (const [id, fn] of [
+  ['phoneInput', savePhone],
+  ['phoneCode', verifyPhoneCode],
+]) {
+  $(id).addEventListener('keydown', (e) => e.key === 'Enter' && fn());
+}
 $('passwordBtn').addEventListener('click', () => {
   $('pwErr').textContent = '';
   $('pwDlg').showModal();

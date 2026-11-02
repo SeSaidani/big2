@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { maskPhone } from './phone-format.js';
 
 const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -59,6 +60,25 @@ CREATE TABLE IF NOT EXISTS seasons (
   ends INTEGER,
   CHECK (ends IS NULL OR ends > starts)
 );
+-- One pending phone-verification code per user (hashed; short-lived).
+CREATE TABLE IF NOT EXISTS phone_codes (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  phone TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+-- Every text we try to send (never its content or the number): drives the
+-- per-user cooldown and daily cap, and gives an audit trail of volume.
+CREATE TABLE IF NOT EXISTS sms_log (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  sent INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sms_log_user ON sms_log(user_id, kind, sent);
 -- The one live table (waiting, playing or just finished), so a game survives
 -- a server restart. At most one row.
 CREATE TABLE IF NOT EXISTS live_game (
@@ -80,6 +100,13 @@ function migrate(db) {
   addColumn(db, 'users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(db, 'users', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(db, 'users', 'last_login', 'INTEGER');
+  // Phone numbers (E.164). Required for every new account; NULL only for accounts
+  // that predate the rule, which are asked for one before they can join a game.
+  addColumn(db, 'users', 'phone', 'TEXT');
+  addColumn(db, 'users', 'phone_verified', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(db, 'users', 'sms_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  addColumn(db, 'users', 'sms_blocked', 'INTEGER NOT NULL DEFAULT 0'); // the carrier says they opted out
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone) WHERE phone IS NOT NULL');
   // 'finished' games score; 'cancelled' ones (an admin ended them) never do.
   addColumn(db, 'games', 'status', "TEXT NOT NULL DEFAULT 'finished'");
   // Every database has a first season, so there is always something to rank.
@@ -284,16 +311,25 @@ export function recentAudit(db, limit = 50) {
     .map((r) => ({ ...r }));
 }
 
+// Phone numbers leave this function masked, never whole.
 export function listUsers(db) {
   return db
     .prepare(
       `SELECT u.id, u.name, u.is_admin AS isAdmin, u.disabled, u.created, u.last_login AS lastLogin,
+              u.phone AS phone, u.phone_verified AS phoneVerified, u.sms_enabled AS smsEnabled,
               COUNT(r.game_id) AS games
        FROM users u LEFT JOIN results r ON r.user_id = u.id
        GROUP BY u.id ORDER BY u.name COLLATE NOCASE`,
     )
     .all()
-    .map((r) => ({ ...r, isAdmin: !!r.isAdmin, disabled: !!r.disabled }));
+    .map(({ phone, ...r }) => ({
+      ...r,
+      isAdmin: !!r.isAdmin,
+      disabled: !!r.disabled,
+      phoneVerified: !!r.phoneVerified,
+      smsEnabled: !!r.smsEnabled,
+      phone: maskPhone(phone),
+    }));
 }
 
 export function adminCount(db) {

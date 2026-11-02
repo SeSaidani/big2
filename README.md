@@ -30,16 +30,59 @@ Open the address it prints. The online server listens on `127.0.0.1:8765` by def
 There is no sign-up by default. The first admin is created from a shell on the machine:
 
 ```
-node server/admin.js make-admin <name>          # asks for a password (hidden input)
+node server/admin.js make-admin <name>          # asks for a password (hidden) and a mobile number
 node server/admin.js reset-password <name>
+node server/admin.js set-phone <name>
 node server/admin.js list-users
 ```
 
-Then sign in (Online, top bar) and open **Admin** to create users with a temporary password, reset passwords, disable
-or enable accounts, promote or demote admins, open or close self-registration, cancel the running game, and read the
-audit log. Every admin action is re-checked on the server and recorded. The last active admin cannot be removed or
-disabled. Users change their own password with the **Password** button. There is no email, so a lost password is
-reset by an admin.
+(`BIG2_PASSWORD` and `BIG2_PHONE` supply those answers in scripts.) Then sign in (Online, top bar) and open **Admin**
+to create users with a temporary password and a mobile number, reset passwords, set a number, disable or enable
+accounts, promote or demote admins, open or close self-registration, cancel the running game, and read the audit log.
+Every admin action is re-checked on the server and recorded. The last active admin cannot be removed or disabled.
+Users change their own password with the **Password** button. There is no email, so a lost password is reset by an
+admin.
+
+## Phone numbers and text messages
+
+**Every account has a mobile number** (international format, e.g. `+44 7700 900123`): it is how we tell you it is your
+turn. You cannot create an account without one (admin, command line or self-registration), a number can belong to only
+one account, and an account from before this rule is asked for one before it can join a game. Numbers are stored in
+E.164, shown to their owner only in masked form (`+44•••••••123`), masked again in the admin screen and in logs, and
+never written to the audit log or sent to other players.
+
+**Verification.** When a text provider is configured, a new number must be confirmed with a 6-digit code (hashed,
+10 minutes, 5 tries, at most 3 codes an hour) before the person can join a game. With no provider there is nothing that
+could deliver a code, so numbers are required but accepted as entered. Numbers set at the command line count as verified.
+
+**When we text.** When the turn passes to a person, the server waits about 20 seconds, checks it is still their turn
+and (by default) that they have no page open, then sends one text: `Big Two: it's your turn. <link>`. Never any cards. At
+most one every 10 minutes and 12 a day per person, tracked in the database so a restart cannot repeat a text. People
+can switch texts off in the **Phone** dialog. If the carrier reports that someone opted out (STOP), texting them stops
+until they set their number again. A provider failure is logged and never affects the game.
+
+| Variable                                                                                   | Meaning                                                                                                        |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `SMS_PROVIDER`                                                                             | `none` (no texts), `console` (default for local use: prints them), `aws-sns`, `twilio`, `http`                 |
+| `PUBLIC_URL`                                                                               | Address put in the text, e.g. `https://big2.example.com`                                                       |
+| `SMS_WHEN`                                                                                 | `offline` (default: only if no page is open) or `always`                                                       |
+| `SMS_DELAY_MS`                                                                             | Wait before texting (default 20000)                                                                            |
+| `SMS_COOLDOWN_MS`                                                                          | Minimum gap between turn texts per person (default 600000)                                                     |
+| `SMS_MAX_PER_DAY`                                                                          | Cap per person per 24 hours (default 12)                                                                       |
+| `PHONE_VERIFICATION=off`                                                                   | Accept numbers without a code even when a provider is set                                                      |
+| `PHONE_ALLOWED_PREFIXES`                                                                   | Comma list such as `+44,+1` to accept only those countries                                                     |
+| `SMS_SENDER_ID`                                                                            | Sender name, where the country and provider allow one                                                          |
+| `AWS_REGION`                                                                               | For `aws-sns`; credentials come from `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` or, on EC2, the instance role |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` or `TWILIO_MESSAGING_SERVICE_SID` | For `twilio`                                                                                                   |
+| `SMS_HTTP_URL`, `SMS_HTTP_AUTHORIZATION`                                                   | For `http`: a JSON `POST {"to": "...", "body": "..."}` to your own endpoint (https required)                   |
+
+Providers live in `server/sms/` behind one small interface (`send({to, body})`), call their services with `fetch` and
+need no SDK, so adding another is a single file. The AWS provider signs requests itself (SigV4, checked against AWS's
+published test vector) and needs only `sns:Publish` on `*`. **What AWS controls that code cannot:** a new account is in
+the SMS _sandbox_ (it can text only numbers you have verified in the console) until you request production access, the
+monthly spend limit starts low and must be raised, and many countries require a registered sender ID or number (in the
+US this takes weeks). Check the current SNS documentation and pricing before relying on it. The `console` provider
+prints verification codes: never use it in production.
 
 ## How online games work
 

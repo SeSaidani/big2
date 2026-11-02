@@ -32,6 +32,7 @@
         <span id="record" class="record solo-only"></span>
         <span id="who" class="record online-only"></span>
         <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
+        <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
         <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
         <button type="button" id="logoutBtn" class="ghost online-only" hidden>Log out</button>
         <button type="button" id="rulesBtn" class="ghost">Rules</button>
@@ -171,6 +172,10 @@
                 </button>
               </div>
             </div>
+            <div class="field">
+              <label for="newUserPhone">Mobile number, with country code (we text them when it is their turn)</label>
+              <input type="tel" id="newUserPhone" autocomplete="off" maxlength="30" placeholder="+44 7700 900123" />
+            </div>
             <label class="check"><input type="checkbox" id="newUserAdmin" /> Make this user an admin</label>
             <div class="row"><button type="button" id="createUserBtn" class="primary">Create user</button></div>
             <p id="createUserMsg" class="muted"></p>
@@ -223,6 +228,7 @@
               <tr>
                 <th>Name</th>
                 <th>Role</th>
+                <th>Phone</th>
                 <th>Games</th>
                 <th>Last login</th>
                 <th>Actions</th>
@@ -286,6 +292,48 @@
       </div>
     </dialog>
 
+    <dialog id="phoneDlg">
+      <h2>Your phone number</h2>
+      <p class="muted">
+        We text you when it is your turn and you are not looking at the game. Nobody else ever sees your number.
+      </p>
+      <p>Current number: <b id="phoneCurrent">none</b> <span id="phoneState" class="muted"></span></p>
+      <div class="field">
+        <label for="phoneInput">New number, with country code</label>
+        <div class="row">
+          <input type="tel" id="phoneInput" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
+          <button type="button" id="phoneSave">Save number</button>
+        </div>
+      </div>
+      <div class="field" id="phoneCodeField" hidden>
+        <label for="phoneCode">The 6-digit code we texted you</label>
+        <div class="row">
+          <input type="text" id="phoneCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+          <button type="button" id="phoneVerify" class="primary">Verify</button>
+          <button type="button" id="phoneResend" class="ghost">Send a new code</button>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="smsToggle" /> Text me when it is my turn</label>
+      <p id="phoneMsg" class="bad"></p>
+      <div class="row"><button type="button" id="phoneClose">Close</button></div>
+    </dialog>
+
+    <dialog id="adminPhoneDlg">
+      <h2>Set a phone number</h2>
+      <p class="muted">
+        For <b id="adminPhoneName"></b>. They confirm it with a texted code before they can be texted.
+      </p>
+      <div class="field">
+        <label for="adminPhoneInput">Number, with country code</label>
+        <input type="tel" id="adminPhoneInput" autocomplete="off" maxlength="30" placeholder="+44 7700 900123" />
+      </div>
+      <p id="adminPhoneErr" class="bad"></p>
+      <div class="row">
+        <button type="button" id="adminPhoneOk" class="primary">Set number</button>
+        <button type="button" id="adminPhoneCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
     <dialog id="pwDlg">
       <h2>Change your password</h2>
       <div class="field">
@@ -312,6 +360,10 @@
       <div class="field">
         <label for="loginPw">Password</label
         ><input id="loginPw" type="password" autocomplete="current-password" maxlength="200" />
+      </div>
+      <div class="field" id="loginPhoneField" hidden>
+        <label for="loginPhone">Mobile number, with country code (only to create an account)</label
+        ><input id="loginPhone" type="tel" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
       </div>
       <p id="loginErr" class="bad"></p>
       <div class="row">
@@ -374,6 +426,11 @@
           at any time.
         </li>
         <li><b>Chat</b> is available while two or more people are at the table.</li>
+        <li>
+          <b>Texts:</b> every account has a mobile number. When it becomes your turn and you are not looking at the
+          game, you get one text with a link (never any cards), at most one every ten minutes. You can switch this off
+          in the Phone dialog. Your number is only used for this, and only you and the server ever see it.
+        </li>
       </ul>
       <p class="keys">Keys: Enter = play · P = pass · H = hint (solo only) · Esc = clear selection</p>
       <form method="dialog"><button type="submit" class="primary">Got it</button></form>

@@ -115,8 +115,12 @@ export class Client {
 }
 
 // Creates the account directly in the database and signs in through the API.
-export async function makeUser(ctx, name, { isAdmin = false } = {}) {
-  await createUser(ctx.app.db, name, PASSWORD, { isAdmin });
+// A distinct, valid UK mobile-style number for each call (accounts need one, and it is unique).
+let phoneCounter = 0;
+export const nextPhone = () => `+4477009${String(++phoneCounter).padStart(5, '0')}`;
+
+export async function makeUser(ctx, name, { isAdmin = false, phone = nextPhone() } = {}) {
+  await createUser(ctx.app.db, name, PASSWORD, { isAdmin, phone, verified: true });
   const c = new Client(ctx.base);
   await c.login(name);
   return c;
