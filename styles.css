@@ -1,0 +1,1385 @@
+:root {
+  --felt: #0f5a3a;
+  --felt-dark: #083826;
+  --ink: #f4f1e8;
+  --muted: #b9c9bf;
+  --accent: #f2c14e;
+  --red: #c8242f;
+  --black: #1b1b1f;
+  --cw: 68px;
+  --ch: 96px;
+  --mw: 40px;
+  --mh: 56px;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* iOS Safari still needs the prefixed forms of text-size-adjust, user-select and touch-callout. */
+
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh; /* the mobile address bar collapses; vh alone would overflow */
+  background: #062a1c;
+  color: var(--ink);
+
+  /* Keep clear of notches and home bars (the viewport uses viewport-fit=cover). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* No double-tap zoom or 300ms tap delay on controls. */
+button,
+select,
+input,
+.card {
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  button,
+  select {
+    min-height: 44px;
+  }
+}
+
+button,
+select {
+  font: inherit;
+  color: inherit;
+  background: #1f6b4b;
+  border: 1px solid #3c8a68;
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #278059;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #222;
+  border-color: #d9a634;
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #ffd36b;
+}
+
+button.ghost {
+  background: transparent;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: #041d13;
+  border-bottom: 1px solid #154a33;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: 0.02em;
+}
+
+.topbar h1 span {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 500;
+  margin-left: 6px;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.controls label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+}
+
+.record {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 270px;
+  gap: 14px;
+  padding: 14px;
+  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
+  min-height: 640px;
+}
+
+.table {
+  position: relative;
+  display: grid;
+  grid-template:
+    'north north north' auto
+    'west center east' 1fr
+    'me me me' auto
+    / 200px 1fr 200px;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 22px;
+  background: radial-gradient(ellipse at center, #17784f 0%, var(--felt) 45%, var(--felt-dark) 100%);
+  box-shadow:
+    inset 0 0 60px rgb(0 0 0 / 50%),
+    0 0 0 8px #3b2414,
+    0 0 0 10px #22140a;
+  overflow: hidden;
+}
+
+.seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 14px;
+  transition: background 0.2s;
+}
+
+.seat-north {
+  grid-area: north;
+}
+
+.seat-west {
+  grid-area: west;
+  justify-content: center;
+}
+
+.seat-east {
+  grid-area: east;
+  justify-content: center;
+}
+
+.seat.active,
+.me.active {
+  background: rgb(242 193 78 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 193 78 / 55%);
+}
+
+.seat-name {
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.count {
+  background: rgb(0 0 0 / 35%);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 0.85rem;
+}
+
+.count.low {
+  background: var(--red);
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Phones show a single card-back with the count on it instead of the whole row. */
+.stack {
+  display: none;
+  position: relative;
+  width: var(--mw);
+  height: var(--mh);
+}
+
+.stack .back {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  box-shadow:
+    3px 3px 0 -1px #5a1420,
+    6px 6px 0 -2px #3e0e16,
+    0 2px 6px rgb(0 0 0 / 45%);
+}
+
+.stack .num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  text-shadow:
+    0 1px 4px #000,
+    0 0 6px #000;
+}
+
+.stack .num.low {
+  color: #ff8d8d;
+}
+
+.backs {
+  display: flex;
+  height: var(--mh);
+}
+
+.backs .back + .back {
+  margin-left: -30px;
+}
+
+.seat-west .backs .back + .back,
+.seat-east .backs .back + .back {
+  margin-left: -33px;
+}
+
+.back {
+  width: var(--mw);
+  height: var(--mh);
+  border-radius: 5px;
+  border: 2px solid #fff;
+  background: repeating-linear-gradient(45deg, #7b1e2b 0 5px, #9a2a39 5px 10px);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+}
+
+.action {
+  min-height: calc(var(--mh) + 4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.action .label {
+  font-style: normal;
+  font-size: 0.75rem;
+  margin-left: 6px;
+}
+
+.thinking::after {
+  content: '';
+  animation: dots 1.2s steps(4) infinite;
+}
+
+@keyframes dots {
+  0% {
+    content: '';
+  }
+
+  25% {
+    content: '.';
+  }
+
+  50% {
+    content: '..';
+  }
+
+  75% {
+    content: '...';
+  }
+}
+
+.center {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* The play on the table gets a soft glow so it stands out from the seats. */
+.trick-cards:not(:empty) {
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 5%);
+  box-shadow:
+    0 0 0 2px rgb(130 195 255 / 55%),
+    0 0 22px rgb(130 195 255 / 40%);
+}
+
+.trick-cards {
+  display: flex;
+  gap: 6px;
+  min-height: var(--ch);
+}
+
+.trick-cards .card {
+  animation: drop 0.25s ease-out;
+}
+
+@keyframes drop {
+  from {
+    transform: translateY(-14px) scale(1.05);
+    opacity: 0;
+  }
+}
+
+.trick-label {
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  min-height: 1.4em;
+}
+
+.trick-label small {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.status {
+  color: var(--accent);
+  min-height: 1.3em;
+  text-align: center;
+}
+
+.me {
+  grid-area: me;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+}
+
+.me-head {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  min-height: 28px;
+}
+
+.my-action {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.sel-info {
+  font-size: 0.95rem;
+}
+
+.sel-info .ok {
+  color: #8fe3a8;
+}
+
+.sel-info .bad {
+  color: #ff9a9a;
+}
+
+.played-fan {
+  --cw: 52px;
+  --ch: 74px;
+
+  display: flex;
+  justify-content: center;
+  min-height: calc(var(--ch) + 14px);
+  padding-bottom: 14px;
+}
+
+.played-fan .card + .card {
+  margin-left: -12px;
+}
+
+.played-fan .card .pip {
+  font-size: 1.6rem;
+}
+
+.hand {
+  display: flex;
+  padding: 44px 0 28px; /* headroom for lifted (selected) cards, room for the arc below */
+  min-height: calc(var(--ch) + 72px);
+
+  /* Taps and swipes on the hand are handled in JS; vertical page scrolling still works. */
+  touch-action: pan-y;
+
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.hand .card + .card {
+  margin-left: -18px;
+}
+
+.hand .card {
+  cursor: pointer;
+  transition:
+    transform 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+@media (hover: hover) {
+  .hand .card:hover {
+    --lift: -8px;
+  }
+}
+
+/* A selected card is clearly lifted out of the hand, in front of its
+   neighbours, with a glow: about a third of the card's height on desktop. */
+.hand .card.selected {
+  --lift: -34px;
+  --s: 1.06;
+
+  z-index: 20;
+  box-shadow:
+    0 0 0 3px var(--accent),
+    0 0 18px 4px rgb(242 193 78 / 60%),
+    0 12px 18px rgb(0 0 0 / 50%);
+}
+
+.hand.disabled .card {
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Cards */
+.card {
+  position: relative;
+  flex: none;
+  width: var(--cw);
+  height: var(--ch);
+  border-radius: 7px;
+  background: linear-gradient(160deg, #fff 0%, #f1ede4 100%);
+  color: var(--black);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 40%);
+
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-user-select: none;
+  user-select: none;
+
+  /* --a, --y: position on the fan arc; --lift: hover/selected raise. */
+  transform: translateY(calc(var(--y, 0px) + var(--lift, 0px))) rotate(var(--a, 0deg)) scale(var(--s, 1));
+}
+
+.card.red {
+  color: var(--red);
+}
+
+.card .corner {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.card .corner.br {
+  inset: auto 5px 4px auto;
+  transform: rotate(180deg);
+}
+
+.card .pip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.1rem;
+}
+
+.card.joker {
+  background: linear-gradient(160deg, #fffbe8 0%, #f6e7b0 100%);
+}
+
+.card.joker .pip {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  writing-mode: vertical-rl;
+}
+
+.card.joker .star {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  font-size: 0.95rem;
+}
+
+.card.mini {
+  width: var(--mw);
+  height: var(--mh);
+  border-radius: 5px;
+}
+
+.card.mini .corner {
+  font-size: 0.72rem;
+  top: 3px;
+  left: 3px;
+}
+
+.card.mini .corner.br {
+  display: none;
+}
+
+.card.mini .pip {
+  font-size: 1.2rem;
+  padding-top: 10px;
+}
+
+.card.mini.joker .pip {
+  font-size: 0.5rem;
+  padding-top: 0;
+}
+
+/* Log (the side panel: the play log above, chat below) */
+.log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #041d13;
+  border: 1px solid #154a33;
+  border-radius: 14px;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.log h2 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.log ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.log li {
+  padding: 5px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 6%);
+}
+
+.log li.you {
+  color: var(--accent);
+}
+
+.log li.sys {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.log .cards-txt {
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+/* End overlay and rules */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.panel,
+dialog {
+  background: #0b3a27;
+  color: var(--ink);
+  border: 1px solid #3c8a68;
+  border-radius: 16px;
+  padding: 22px 26px;
+  max-width: 760px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 60%);
+}
+
+.panel h2 {
+  margin-top: 0;
+  color: var(--accent);
+}
+
+.end-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.end-row .who {
+  width: 110px;
+  font-weight: 600;
+}
+
+.end-row .cards {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+dialog ul {
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.keys {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Online mode */
+[hidden] {
+  display: none !important;
+}
+
+body.online .solo-only,
+body.solo .online-only {
+  display: none !important;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.bad {
+  color: #ff9a9a;
+  min-height: 1.2em;
+  margin: 6px 0;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.mode {
+  display: flex;
+}
+
+button.seg {
+  border-radius: 0;
+  background: transparent;
+  padding: 5px 12px;
+}
+
+.mode .seg:first-child,
+.row > button.seg:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.mode .seg:last-child,
+.row > button.seg:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+button.seg.active {
+  background: var(--accent);
+  color: #222;
+  border-color: #d9a634;
+  font-weight: 600;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-height: 1.3em;
+}
+
+.clock.urgent {
+  color: #ff9a9a;
+  font-weight: 700;
+}
+
+.lobby {
+  border-radius: 22px;
+  padding: 22px;
+  overflow: auto;
+  background: radial-gradient(ellipse at center, #17784f 0%, var(--felt) 45%, var(--felt-dark) 100%);
+  box-shadow:
+    inset 0 0 60px rgb(0 0 0 / 50%),
+    0 0 0 8px #3b2414,
+    0 0 0 10px #22140a;
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.panel-card {
+  background: rgb(4 29 19 / 82%);
+  border: 1px solid #154a33;
+  border-radius: 14px;
+  padding: 16px 20px;
+}
+
+.panel-card h2 {
+  margin: 0 0 6px;
+  color: var(--accent);
+}
+
+.panel-card h3 {
+  margin: 14px 0 6px;
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+table.lb {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+table.lb th,
+table.lb td {
+  text-align: right;
+  padding: 5px 6px;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+table.lb th:nth-child(2),
+table.lb td:nth-child(2) {
+  text-align: left;
+}
+
+table.lb th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+}
+
+input {
+  font: inherit;
+  color: var(--ink);
+  background: #06281b;
+  border: 1px solid #3c8a68;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.lobby.admin {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lobby.admin .lobby-grid {
+  width: 100%;
+}
+
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+table.users td {
+  text-align: left;
+}
+
+table.users td.actions-cell {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+table.users td.actions-cell button {
+  padding: 3px 9px;
+  font-size: 0.85rem;
+}
+
+.list li.muted {
+  justify-content: flex-start;
+}
+
+button.ghost.active {
+  background: rgb(242 193 78 / 20%);
+  border-color: var(--accent);
+}
+
+/* Side panel: the play log above, chat below */
+.log > ol {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 80px;
+}
+
+.chat {
+  border-top: 1px solid #154a33;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.chat h2 {
+  margin: 0 0 6px;
+}
+
+.chat ol {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  max-height: 190px;
+  min-height: 60px;
+  overflow-y: auto;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.chat li {
+  padding: 3px 0;
+  border: 0;
+}
+
+.chat li b {
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.chat .row {
+  margin: 0;
+  flex-wrap: nowrap;
+}
+
+.chat input {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat .bad {
+  margin: 4px 0 0;
+  min-height: 0;
+}
+
+.end-row .pts {
+  margin-left: auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pts.win {
+  color: #8fe3a8;
+}
+
+.pts.loss {
+  color: #ff9a9a;
+}
+
+/* Landscape phones: very little height, so shrink everything and drop the side panel. */
+@media (orientation: landscape) and (max-height: 520px) {
+  :root {
+    --cw: 40px;
+    --ch: 58px;
+    --mw: 22px;
+    --mh: 32px;
+  }
+
+  .topbar {
+    padding: 2px 10px;
+  }
+
+  .topbar h1 span,
+  .record {
+    display: none;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+    padding: 4px 6px;
+  }
+
+  .log {
+    display: none;
+  }
+
+  .table {
+    grid-template-columns: 110px 1fr 110px;
+    grid-template-rows: auto 1fr auto;
+    padding: 4px 6px;
+    gap: 2px;
+    min-height: 0;
+    border-radius: 14px;
+  }
+
+  .seat {
+    padding: 1px;
+    gap: 1px;
+  }
+
+  .seat-name {
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  /* The count sits on one card-back, as on a portrait phone. */
+  .backs,
+  .count {
+    display: none;
+  }
+
+  .stack {
+    display: block;
+
+    --mw: 24px;
+    --mh: 34px;
+  }
+
+  .stack .num {
+    font-size: 0.9rem;
+  }
+
+  .action {
+    min-height: 0;
+    font-size: 0.72rem;
+  }
+
+  .status {
+    font-size: 0.78rem;
+    min-height: 0;
+  }
+
+  .me-head {
+    order: 1;
+    min-height: 0;
+    gap: 10px;
+    font-size: 0.78rem;
+  }
+
+  .actions {
+    order: 3;
+    gap: 6px;
+  }
+
+  .hand {
+    --cw: 46px;
+    --ch: 66px;
+
+    order: 4;
+    padding: 30px 0 0;
+    min-height: calc(var(--ch) + 30px - 24px);
+    margin-bottom: -24px;
+  }
+
+  .card.mini {
+    width: 20px;
+    height: 29px;
+  }
+
+  .card.mini .corner {
+    font-size: 0.5rem;
+  }
+
+  .card.mini .pip {
+    font-size: 0.7rem;
+    padding-top: 4px;
+  }
+
+  .center {
+    gap: 3px;
+  }
+
+  .trick-cards {
+    --cw: 30px;
+    --ch: 43px;
+  }
+
+  .trick-cards .card .pip {
+    font-size: 1rem;
+  }
+
+  .trick-cards:not(:empty) {
+    padding: 4px 8px;
+  }
+
+  .trick-label {
+    font-size: 0.85rem;
+  }
+
+  .played-fan {
+    display: none;
+  }
+
+  .me {
+    padding: 2px 0 0;
+    gap: 2px;
+  }
+
+  .hand .card + .card {
+    margin-left: -24px;
+  }
+
+  .hand .card .pip {
+    font-size: 1.3rem;
+  }
+
+  .hand .card.selected {
+    --lift: -26px;
+  }
+
+  .my-action {
+    display: none;
+  }
+
+  button,
+  select {
+    padding: 3px 10px;
+    min-height: 34px;
+  }
+
+  .topbar button,
+  .topbar select {
+    min-height: 30px;
+  }
+}
+
+/* Phones: a narrower table with smaller cards and stacked seat labels. */
+@media (max-width: 700px) {
+  :root {
+    --cw: 44px;
+    --ch: 64px;
+    --mw: 26px;
+    --mh: 38px;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  button,
+  select {
+    padding: 5px 9px;
+    font-size: 0.85rem;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .topbar h1 {
+    font-size: 1.05rem;
+    white-space: nowrap;
+  }
+
+  .topbar h1 span {
+    display: none;
+  }
+
+  .controls {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .layout {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .table {
+    grid-template-columns: 78px 1fr 78px;
+    padding: 8px;
+    gap: 6px;
+    border-radius: 16px;
+    min-width: 0;
+  }
+
+  .seat {
+    padding: 3px;
+    min-width: 0;
+  }
+
+  .seat-name {
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.78rem;
+    text-align: center;
+  }
+
+  .count {
+    padding: 0 6px;
+    font-size: 0.72rem;
+  }
+
+  .backs .back + .back {
+    margin-left: -19px;
+  }
+
+  .seat-west .backs .back + .back,
+  .seat-east .backs .back + .back {
+    margin-left: -21px;
+  }
+
+  .action {
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    min-height: calc(var(--mh) + 2px);
+  }
+
+  .card.mini {
+    width: 24px;
+    height: 34px;
+    border-radius: 4px;
+  }
+
+  .card.mini .corner {
+    font-size: 0.55rem;
+    top: 2px;
+    left: 2px;
+  }
+
+  .card.mini .pip {
+    font-size: 0.8rem;
+    padding-top: 6px;
+  }
+
+  .card .corner {
+    font-size: 0.75rem;
+  }
+
+  .card .pip {
+    font-size: 1.5rem;
+  }
+
+  .card.joker .pip {
+    font-size: 0.55rem;
+  }
+
+  .trick-cards {
+    --cw: 34px;
+    --ch: 49px;
+  }
+
+  .trick-cards .card + .card {
+    margin-left: -8px;
+  }
+
+  .trick-cards .card .pip {
+    font-size: 1.1rem;
+  }
+
+  .trick-cards .card .corner {
+    font-size: 0.6rem;
+  }
+
+  .trick-label {
+    font-size: 0.9rem;
+  }
+
+  .status {
+    font-size: 0.85rem;
+  }
+
+  .center {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .played-fan {
+    --cw: 34px;
+    --ch: 48px;
+
+    order: 2;
+    min-height: calc(var(--ch) + 8px);
+    padding-bottom: 8px;
+  }
+
+  .played-fan .card .pip {
+    font-size: 1.1rem;
+  }
+
+  .played-fan .card + .card {
+    margin-left: -8px;
+  }
+
+  /* The hand: one curved row tucked into the bottom edge of the table, so the
+     cards can be wide enough to tap while only their tops show. Controls sit
+     above it. A selected card rises well clear of the row. */
+  .me {
+    padding: 6px 2px;
+    min-width: 0;
+  }
+
+  .me-head {
+    order: 1;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 12px;
+    min-height: 0;
+    text-align: center;
+  }
+
+  .actions {
+    order: 3;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .hand {
+    order: 4;
+
+    --cw: 54px;
+    --ch: 78px;
+
+    padding: 46px 0 0;
+    min-height: calc(var(--ch) + 46px - 36px);
+    margin-bottom: -36px; /* the bottom of the cards falls below the table edge, which clips it */
+    max-width: 100%;
+    touch-action: pan-y;
+  }
+
+  .hand .card + .card {
+    margin-left: -32px; /* 22px of each card stays exposed to the finger */
+  }
+
+  .hand .card .pip {
+    font-size: 1.6rem;
+  }
+
+  .hand .card.selected {
+    --lift: -38px;
+  }
+
+  /* Seats: the count sits on one card-back. */
+  .backs,
+  .count {
+    display: none;
+  }
+
+  .stack {
+    display: block;
+
+    --mw: 34px;
+    --mh: 48px;
+  }
+
+  .lobby {
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .lobby-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-card {
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+
+  table.users td.actions-cell {
+    justify-content: flex-start;
+  }
+
+  .panel,
+  dialog {
+    padding: 16px;
+    max-width: calc(100vw - 24px);
+  }
+
+  .end-row {
+    flex-wrap: wrap;
+  }
+
+  .end-row .who {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .log {
+    max-height: 220px;
+  }
+
+  :root {
+    --cw: 56px;
+    --ch: 80px;
+  }
+}
