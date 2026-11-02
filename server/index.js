@@ -559,7 +559,9 @@ export function createApp(opts = {}) {
   };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is symlink-free but argv[1] is not: compare real paths so that
+// starting the server through a symlink (/opt/big2/current) works.
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   const env = process.env;
   const smsProvider = createSmsProvider(smsConfigFromEnv(env));
   const app = createApp({
