@@ -124,7 +124,9 @@ or Android device**.
 Singles, pairs, triples and five-card hands (straight, flush, full house, four of a kind + kicker, straight flush,
 five of a kind). A straight is worth its highest card; ace and 2 are low in A-2-3-4-5 and 2-3-4-5-6, the two weakest
 straights. You can pass even with the lead. If the next player has one card left, a single must be your highest. A
-real card beats a joker when plays are otherwise equal. If nobody left can beat a play, the others are passed
+real card always beats a joker standing for the same thing: a joker hand ranks as the hand its jokers represent, and
+the real hand wins any exact tie. So nothing beats the real 2♠, a lone joker is a 2♠ that loses to it (but beats the
+2♥ and everything below), and two jokers cannot beat each other. If nobody left can beat a play, the others are passed
 automatically. The in-game **Rules** dialog has the full text.
 
 ## Layout

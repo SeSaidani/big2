@@ -3,9 +3,10 @@
 // built around the lowest card from rank/suit groups, and single/pair/triple
 // follows are read straight off the rank groups.
 
-import { isJoker, rankOf, suitOf, RANK_TWO, THREE_OF_DIAMONDS, FIRST_JOKER } from '../cards.js';
-import { classify, WINDOWS, SINGLE, PAIR, TRIPLE } from '../hands.js';
+import { isJoker, rankOf, suitOf, RANK_TWO, THREE_OF_DIAMONDS } from '../cards.js';
+import { classify, singleKeyOf, WINDOWS, SINGLE, PAIR, TRIPLE } from '../hands.js';
 import { generatePlays } from '../moves.js';
+import { topSingleKey } from '../game.js';
 
 function groups(hand) {
   const byRank = Array.from({ length: 13 }, () => []);
@@ -67,7 +68,7 @@ function followSingle(g, key, allowPremium) {
   for (let r = 0; r < 13; r++) {
     if (r === RANK_TWO && !allowPremium) break;
     for (const c of g.byRank[r]) {
-      if (c <= key) continue;
+      if (singleKeyOf(c) <= key) continue;
       if (any < 0) any = c;
       if (loose < 0 && g.byRank[r].length === 1) loose = c;
     }
@@ -75,7 +76,7 @@ function followSingle(g, key, allowPremium) {
   }
   if (loose >= 0) return [loose];
   if (any >= 0) return [any];
-  if (allowPremium && g.jokers.length && key < FIRST_JOKER) return [g.jokers[0]];
+  if (allowPremium && g.jokers.length && key < singleKeyOf(g.jokers[0])) return [g.jokers[0]];
   return null;
 }
 
@@ -108,8 +109,9 @@ export function greedyMove(state, rng = Math.random, eps = 0.05) {
   for (let q = 0; q < 4; q++) if (q !== p) minOpp = Math.min(minOpp, state.hands[q].length);
   // Last-card rule: singles must be the highest when the next seat has one card.
   const forcedTop = state.hands[(p + 1) % 4].length === 1;
-  const top = hand[hand.length - 1]; // hands are sorted, jokers last
-  const topKey = isJoker(top) ? FIRST_JOKER : top;
+  // The highest single: a real 2♠ outranks a joker even though jokers sort last.
+  const topKey = topSingleKey(hand);
+  const top = hand.find((c) => singleKeyOf(c) === topKey);
 
   if (!trick) {
     if (hand.length <= 5 && hand.length !== 4) {

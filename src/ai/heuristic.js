@@ -13,10 +13,22 @@
 // 4. Lead/follow rules use the decomposition, danger from opponents' card
 //    counts, and the change in plan cost a play would cause.
 
-import { isJoker, rankOf, suitOf, FIRST_JOKER, DECK_SIZE, RANK_TWO, THREE_OF_DIAMONDS } from '../cards.js';
-import { classify, baseKey, TIE, SINGLE, PAIR, TRIPLE, FOUR_KIND } from '../hands.js';
+import {
+  isJoker,
+  rankOf,
+  suitOf,
+  cardId,
+  FIRST_JOKER,
+  DECK_SIZE,
+  RANK_TWO,
+  SPADES,
+  THREE_OF_DIAMONDS,
+} from '../cards.js';
+import { classify, baseKey, singleKeyOf, TIE, SINGLE, PAIR, TRIPLE, FOUR_KIND } from '../hands.js';
 import { generatePlays, legalPlays, moveKey } from '../moves.js';
 import { viewRules, topSingleKey } from '../game.js';
+
+const TWO_OF_SPADES = cardId(RANK_TWO, SPADES);
 
 export function buildContext(view) {
   const known = new Uint8Array(DECK_SIZE);
@@ -24,7 +36,7 @@ export function buildContext(view) {
   for (const c of view.played) known[c] = 1;
   const unseenByRank = Array.from({ length: 13 }, () => []);
   let uj = 0;
-  const below = new Int32Array(FIRST_JOKER + 2); // below[k] = #unseen with key < k
+  const below = new Int32Array(FIRST_JOKER + 2); // below[b] = #unseen singles with base rank < b
   let total = 0;
   for (let c = 0; c < DECK_SIZE; c++) {
     if (known[c]) continue;
@@ -33,20 +45,20 @@ export function buildContext(view) {
     else unseenByRank[rankOf(c)].push(c);
   }
   for (let k = 1; k < below.length; k++) {
-    const c = k - 1; // unseen keys: naturals are their id, jokers are 52
+    const c = k - 1; // base ranks: naturals are their id, and a joker counts as a 2♠
     let add = 0;
     if (c < FIRST_JOKER) add = known[c] ? 0 : 1;
-    else if (c === FIRST_JOKER) add = uj;
+    if (c === TWO_OF_SPADES) add += uj;
     below[k] = below[k - 1] + add;
   }
-  let maxSingle = uj > 0 ? FIRST_JOKER : -1;
+  let maxSingle = uj > 0 ? singleKeyOf(FIRST_JOKER) : -1;
   // Strongest pair/triple keys opponents could hold, in classify()'s encoding
   // (base · TIE + natural-card count, so real cards win ties).
   let maxPair = uj >= 2 ? (RANK_TWO * 4 + 3) * TIE : -1;
   let maxTriple = uj >= 3 ? RANK_TWO * TIE : -1;
   for (let r = 0; r < 13; r++) {
     const u = unseenByRank[r];
-    if (u.length) maxSingle = Math.max(maxSingle, u[u.length - 1]);
+    if (u.length) maxSingle = Math.max(maxSingle, singleKeyOf(u[u.length - 1]));
     if (u.length >= 2) maxPair = Math.max(maxPair, (r * 4 + suitOf(u[u.length - 1])) * TIE + 2);
     if (u.length >= 1 && uj >= 1) maxPair = Math.max(maxPair, (r * 4 + 3) * TIE + 1);
     if (u.length >= 1 && u.length + uj >= 3) maxTriple = Math.max(maxTriple, r * TIE + Math.min(u.length, 3));
@@ -71,7 +83,7 @@ export function strength(cls, ctx) {
   switch (cls.type) {
     case SINGLE: {
       if (cls.key >= ctx.maxSingle) return { s: 1, ctl: true };
-      return { s: (0.9 * ctx.below[cls.key]) / Math.max(1, ctx.total), ctl: false };
+      return { s: (0.9 * ctx.below[baseKey(cls)]) / Math.max(1, ctx.total), ctl: false };
     }
     case PAIR:
       if (cls.key >= ctx.maxPair) return { s: 1, ctl: true };
@@ -205,7 +217,7 @@ function single(c) {
 
 function highestSingle(hand) {
   const k = topSingleKey(hand);
-  return single(hand.find((c) => (isJoker(c) ? FIRST_JOKER : c) === k));
+  return single(hand.find((c) => singleKeyOf(c) === k));
 }
 
 // Lead options, best first; every entry is legal under `rules`.
