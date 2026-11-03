@@ -11,8 +11,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
+import { isMain } from './main-module.js';
 
 const NAME = /^big2-\d{4}-\d{2}-\d{2}T[\d-]+Z\.db$/;
 
@@ -57,7 +57,7 @@ export async function backupDatabase(sourceFile, dir, { keep = 14, now = new Dat
   return { file: dest, removed: old.length };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const [dir, keepArg] = process.argv.slice(2);
   const file = process.env.DB_FILE;
   if (!dir || !file) {

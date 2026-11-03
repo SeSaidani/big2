@@ -39,6 +39,7 @@ import { secureRng } from './table.js';
 import { normalizePhone, maskPhone } from './phone-format.js';
 import { accountPhone, setUserPhone, setSmsEnabled, createCode, dropCode, checkCode, logSms } from './phones.js';
 import { TurnNotifier } from './notify.js';
+import { isMain } from './main-module.js';
 import { createSmsProvider, smsConfigFromEnv } from './sms/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -559,9 +560,7 @@ export function createApp(opts = {}) {
   };
 }
 
-// import.meta.url is symlink-free but argv[1] is not: compare real paths so that
-// starting the server through a symlink (/opt/big2/current) works.
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+if (isMain(import.meta.url)) {
   const env = process.env;
   const smsProvider = createSmsProvider(smsConfigFromEnv(env));
   const app = createApp({

@@ -20,6 +20,7 @@ import { openDb, listUsers, audit } from './db.js';
 import { createUser, setPassword, validatePassword } from './auth.js';
 import { normalizePhone } from './phone-format.js';
 import { setUserPhone } from './phones.js';
+import { isMain } from './main-module.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -134,7 +135,7 @@ async function main(argv) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2)).catch((err) => {
     console.error(err.message);
     process.exit(1);
