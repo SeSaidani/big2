@@ -380,6 +380,14 @@ button.ghost {
   gap: 8px;
   padding: 10px;
   border-radius: 14px;
+
+  /* The card size and overlap live here so the highlight can be exactly as wide as a full
+     14-card hand (plus its side padding), not as wide as the table. */
+  --overlap: 18px;
+  --px: 10px;
+
+  width: min(100%, calc(14 * var(--cw) - 13 * var(--overlap) + 2 * var(--px)));
+  justify-self: center;
 }
 
 .me-head {
@@ -439,7 +447,7 @@ button.ghost {
 }
 
 .hand .card + .card {
-  margin-left: -18px;
+  margin-left: calc(-1 * var(--overlap));
 }
 
 .hand .card {
@@ -1033,9 +1041,6 @@ button.ghost.active {
   }
 
   .hand {
-    --cw: 46px;
-    --ch: 66px;
-
     order: 4;
     padding: 30px 0 0;
     min-height: calc(var(--ch) + 30px - 24px);
@@ -1082,12 +1087,13 @@ button.ghost.active {
   }
 
   .me {
+    --cw: 46px;
+    --ch: 66px;
+    --overlap: 24px;
+    --px: 0px;
+
     padding: 2px 0 0;
     gap: 2px;
-  }
-
-  .hand .card + .card {
-    margin-left: -24px;
   }
 
   .hand .card .pip {
@@ -1278,6 +1284,11 @@ button.ghost.active {
      cards can be wide enough to tap while only their tops show. Controls sit
      above it. A selected card rises well clear of the row. */
   .me {
+    --cw: 54px;
+    --ch: 78px;
+    --overlap: 32px; /* 22px of each card stays exposed to the finger */
+    --px: 2px;
+
     padding: 6px 2px;
     min-width: 0;
   }
@@ -1299,19 +1310,11 @@ button.ghost.active {
 
   .hand {
     order: 4;
-
-    --cw: 54px;
-    --ch: 78px;
-
     padding: 46px 0 0;
     min-height: calc(var(--ch) + 46px - 36px);
     margin-bottom: -36px; /* the bottom of the cards falls below the table edge, which clips it */
     max-width: 100%;
     touch-action: pan-y;
-  }
-
-  .hand .card + .card {
-    margin-left: -32px; /* 22px of each card stays exposed to the finger */
   }
 
   .hand .card .pip {

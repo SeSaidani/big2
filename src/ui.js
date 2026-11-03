@@ -288,7 +288,6 @@ function renderSelection() {
   }
   $('playBtn').disabled = !canPlay;
   $('passBtn').disabled = !(myTurn() && turnRules(game).canPass);
-  $('hintBtn').disabled = !myTurn();
   $('clearBtn').disabled = selected.size === 0;
   $('sortBtn').textContent = `Sort: ${sortMode}`;
 }
@@ -468,17 +467,8 @@ function pass() {
   else commit(null);
 }
 
-function hint() {
-  if (mode !== 'solo' || !myTurn()) return;
-  const m = heuristicMove(observe(game, 0));
-  selected = new Set(m ? m.cards : []);
-  setStatus(m ? `Hint: ${describe(m.cls)}` : 'Hint: pass.');
-  render();
-}
-
 $('playBtn').addEventListener('click', playSelected);
 $('passBtn').addEventListener('click', pass);
-$('hintBtn').addEventListener('click', hint);
 $('clearBtn').addEventListener('click', () => {
   selected = new Set();
   render();
@@ -500,7 +490,6 @@ document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || ['SELECT', 'INPUT'].includes(e.target.tagName)) return;
   if (e.key === 'Enter') playSelected();
   else if (e.key === 'p' || e.key === 'P') pass();
-  else if (e.key === 'h' || e.key === 'H') hint();
   else if (e.key === 'Escape') {
     selected = new Set();
     render();
