@@ -1056,6 +1056,13 @@ button.ghost.active {
     font-size: 0.85rem;
   }
 
+  /* "played by" shares the line with the hand's name: with all three last plays showing, a
+     two-line label made the table 7px taller than the screen. */
+  .trick-label small {
+    display: inline;
+    margin-left: 0.4em;
+  }
+
   .played-fan {
     display: none;
   }
