@@ -223,7 +223,9 @@ function fitHand() {
   const me = document.querySelector('.me');
   const n = $('hand').children.length;
   me.style.removeProperty('--hand-overlap');
-  if (n < 2) return;
+  // Not laid out yet (the table is hidden, so the width is 0): measuring now would give nonsense. The
+  // observer below calls this again once the section has a size.
+  if (n < 2 || me.clientWidth === 0) return;
   const cs = getComputedStyle(me);
   const cw = parseFloat(cs.getPropertyValue('--cw'));
   const base = parseFloat(cs.getPropertyValue('--overlap'));
@@ -233,7 +235,8 @@ function fitHand() {
     me.style.setProperty('--hand-overlap', `${Math.min(needed, cw - 8)}px`);
   }
 }
-window.addEventListener('resize', fitHand);
+// Re-fit whenever the section changes size: a resize, a rotation, or the table appearing.
+new ResizeObserver(fitHand).observe(document.querySelector('.me'));
 
 // Selecting cards: tap one to toggle it, or drag a finger (or the mouse) across
 // several to select, or deselect, all of them. 14 overlapped cards on a phone

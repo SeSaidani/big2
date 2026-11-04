@@ -77,11 +77,11 @@ async function init() {
   show('codeBtn', !!config.codeLogin);
   show('registerBtn', !!config.registrationOpen);
   show('phoneField', !!config.registrationOpen);
+  // Only registration needs explaining; with it closed the page is just the logo and the form.
+  show('help', !!config.registrationOpen);
   $('help').textContent = config.registrationOpen
     ? 'Sign in, or create an account (3-20 letters, digits, _ or -; password of at least 10 characters).'
-    : config.codeLogin
-      ? 'Accounts are created by an admin. Enter your name and text yourself a sign-in code, or use your password.'
-      : 'Accounts are created by an admin. Enter the name and password you were given.';
+    : '';
   $('name').focus();
 }
 init();
