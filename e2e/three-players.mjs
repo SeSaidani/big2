@@ -41,8 +41,19 @@ async function main() {
   // --- solo, three players ---
   await A.waitFor(`!!document.getElementById('modeSolo')`, 8000, 'mode buttons');
   await A.click('modeSolo');
-  await A.ev(
-    `(() => { const s = document.getElementById('playerCount'); s.value = '3'; s.dispatchEvent(new Event('change')); })()`,
+  check(
+    'the header has no settings to change mid-game',
+    (await A.ev(`document.querySelectorAll('.topbar select').length`)) === 0,
+  );
+  // The settings are chosen in the New game dialog.
+  await A.click('newBtn');
+  await A.waitFor(`document.getElementById('newGameDlg').open`, 4000, 'the New game dialog');
+  await A.ev(`document.getElementById('ngPlayers').value = '3'; document.getElementById('ngLevel').value = 'easy'`);
+  await A.click('ngStart');
+  check(
+    'the dialog closes and the chip shows the settings',
+    (await A.text('soloChip')) === '3 players · Easy',
+    await A.text('soloChip'),
   );
   await A.waitFor(`document.querySelectorAll('#hand .card').length >= 18`, 8000, 'a hand of 18 or more');
   const n = await handSize(A);
@@ -62,6 +73,20 @@ async function main() {
   await A.shot('1b-phone-three');
   await A.desktop();
   await sleep(300);
+  // Once the opening play is made, starting another game warns, and cancelling changes nothing.
+  for (let i = 0; i < 80 && !['play', 'pass'].includes(await A.ev(STEP)); i++) await sleep(100);
+  const cardsBefore = await A.ev(`[...document.querySelectorAll('#hand .card')].map((c) => c.dataset.id).join()`);
+  await A.click('newBtn');
+  await A.waitFor(`document.getElementById('newGameDlg').open`, 4000, 'the New game dialog mid-game');
+  check('mid-game the dialog warns it replaces the game', await A.visible('ngWarn'));
+  await A.click('ngCancel');
+  const cardsAfter = await A.ev(`[...document.querySelectorAll('#hand .card')].map((c) => c.dataset.id).join()`);
+  check(
+    'cancelling leaves the game as it was',
+    !(await A.ev(`document.getElementById('newGameDlg').open`)) &&
+      cardsAfter.length > 0 &&
+      cardsAfter.split(',').every((id) => cardsBefore.split(',').includes(id)),
+  );
   await A.shot('1-solo-three');
   await playOut(A);
   const soloRows = await A.ev(`document.querySelectorAll('#endHands .end-row').length`);

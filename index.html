@@ -92,33 +92,19 @@
           <button type="button" id="modeSolo" class="seg active">Solo</button>
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
-        <label class="solo-only"
-          >Players
-          <select id="playerCount">
-            <option value="4">4</option>
-            <option value="3">3</option>
-          </select>
-        </label>
-        <label class="solo-only"
-          >AI
-          <select id="level">
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-        </label>
         <span id="record" class="record solo-only"></span>
+        <span id="soloChip" class="chip solo-only" title="The settings of this game"></span>
         <button type="button" id="newBtn" class="solo-only">New game</button>
-        <details id="account" class="account" hidden>
-          <summary id="who" aria-label="Account menu"></summary>
-          <div class="menu">
-            <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
-            <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
-            <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
-            <button type="button" id="logoutBtn" class="ghost">Log out</button>
-          </div>
-        </details>
       </div>
+      <details id="account" class="account" hidden>
+        <summary id="who" aria-label="Account menu"></summary>
+        <div class="menu">
+          <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
+          <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
+          <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
+          <button type="button" id="logoutBtn" class="ghost">Log out</button>
+        </div>
+      </details>
     </header>
 
     <div class="layout">
@@ -422,6 +408,31 @@
       <div class="row">
         <button type="button" id="adminPhoneOk" class="primary">Set number</button>
         <button type="button" id="adminPhoneCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="newGameDlg">
+      <h2>New game</h2>
+      <p class="muted">The settings are fixed for the whole game. To change them, start another one.</p>
+      <div class="field">
+        <label for="ngPlayers">Players</label>
+        <select id="ngPlayers">
+          <option value="4">4 players</option>
+          <option value="3">3 players</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ngLevel">Computer level</label>
+        <select id="ngLevel">
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </div>
+      <p id="ngWarn" class="bad" hidden>This replaces the game you are playing.</p>
+      <div class="row">
+        <button type="button" id="ngStart" class="primary">Start</button>
+        <button type="button" id="ngCancel" class="ghost">Cancel</button>
       </div>
     </dialog>
 

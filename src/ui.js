@@ -30,7 +30,9 @@ let thinking = -1;
 let busy = false;
 let gen = 0; // bumps on New game so stale async work is dropped
 let sortMode = localStorage.getItem('big2.sort') || 'rank';
-let level = localStorage.getItem('big2.level') || 'medium';
+const LEVEL_LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+let level = localStorage.getItem('big2.level');
+if (!(level in LEVEL_LABEL)) level = 'medium'; // a stale or edited stored value must not reach the AI
 let soloPlayers = localStorage.getItem('big2.players') === '3' ? 3 : 4; // seats at a solo table
 // Online mode (see the section at the end of this file).
 let mode = 'solo'; // 'solo' | 'online'
@@ -341,7 +343,12 @@ function log(text, cls = '', cards = null) {
 }
 
 // ---------- Turn flow ----------
+function renderSoloChip() {
+  $('soloChip').textContent = `${soloPlayers} players · ${LEVEL_LABEL[level]}`;
+}
+
 function startGame() {
+  renderSoloChip();
   gen++;
   pending.clear();
   NAMES = SOLO_NAMES[soloPlayers];
@@ -497,7 +504,24 @@ $('sortBtn').addEventListener('click', () => {
   localStorage.setItem('big2.sort', sortMode);
   render();
 });
-$('newBtn').addEventListener('click', startGame);
+// The settings of a solo game are chosen here and then fixed: the header only shows them. Starting a
+// game replaces the one in progress, so the dialog says so when one is (the opening play has been made).
+const gameInProgress = () => mode === 'solo' && !!game && game.winner < 0 && !game.first;
+$('newBtn').addEventListener('click', () => {
+  $('ngPlayers').value = String(soloPlayers);
+  $('ngLevel').value = level;
+  show('ngWarn', gameInProgress());
+  $('newGameDlg').showModal();
+});
+$('ngStart').addEventListener('click', () => {
+  soloPlayers = $('ngPlayers').value === '3' ? 3 : 4;
+  level = $('ngLevel').value in LEVEL_LABEL ? $('ngLevel').value : 'medium';
+  localStorage.setItem('big2.players', String(soloPlayers));
+  localStorage.setItem('big2.level', level);
+  $('newGameDlg').close();
+  startGame();
+});
+$('ngCancel').addEventListener('click', () => $('newGameDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
 // The play log can be folded away. It starts folded on a phone, where the table needs the room.
 const logPanel = document.querySelector('.log');
@@ -510,17 +534,6 @@ $('logToggle').addEventListener('click', () => {
   const open = logPanel.classList.contains('collapsed');
   setLogOpen(open);
   localStorage.setItem('big2.log', open ? 'open' : 'closed');
-});
-$('playerCount').value = String(soloPlayers);
-$('playerCount').addEventListener('change', (e) => {
-  soloPlayers = e.target.value === '3' ? 3 : 4;
-  localStorage.setItem('big2.players', String(soloPlayers));
-  if (mode === 'solo') startGame();
-});
-$('level').value = level;
-$('level').addEventListener('change', (e) => {
-  level = e.target.value;
-  localStorage.setItem('big2.level', level);
 });
 document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || ['SELECT', 'INPUT'].includes(e.target.tagName)) return;
