@@ -95,6 +95,12 @@ async function main() {
     8000,
     'Join button for alice',
   );
+  const card = await B.text('gameBox');
+  check(
+    'the lobby shows the current game and its settings',
+    ['Host', 'boss', 'Waiting to start', '4 seats', 'Easy AI plays the 3 empty seats'].every((s) => card.includes(s)),
+    card.replace(/\s+/g, ' ').slice(0, 120),
+  );
   check(
     'a second game cannot be created while one is waiting',
     (await A.ev(

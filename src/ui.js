@@ -742,9 +742,30 @@ function renderLobbyHome() {
     if (!user.isAdmin) line('No game is running. An admin starts the games.', 'muted');
     return;
   }
-  const names = g.players.length ? g.players.join(', ') : 'nobody yet';
-  const state = { waiting: 'waiting to start', playing: 'in progress', done: 'just finished' }[g.status] || g.status;
-  line(`${g.host}'s game is ${state}. Players: ${names}. ${g.seats} seats, ${g.aiLevel} AI fills the empty ones.`);
+  // The current game, as a card: who is hosting, where it is up to, who is in, and what the empty seats get.
+  const state = { waiting: 'Waiting to start', playing: 'In progress', done: 'Just finished' }[g.status] || g.status;
+  const empty = g.seats - g.humans;
+  const facts = document.createElement('dl');
+  facts.className = 'facts';
+  for (const [label, value] of [
+    ['Host', g.host],
+    ['Status', state],
+    ['Table', `${g.seats} seats`],
+    ['Players', g.players.length ? g.players.join(', ') : 'nobody yet'],
+    [
+      'Computer',
+      empty > 0
+        ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}`
+        : 'no computer players',
+    ],
+  ]) {
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    facts.append(dt, dd);
+  }
+  box.appendChild(facts);
   const row = document.createElement('div');
   row.className = 'row';
   if (table) {

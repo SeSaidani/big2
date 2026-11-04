@@ -132,6 +132,23 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+/* The current online game in the lobby: a short list of facts. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 10px 0 14px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The settings of the solo game, shown but not editable. */
 .chip {
   padding: 5px 12px;
