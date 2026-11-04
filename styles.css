@@ -451,7 +451,7 @@ button.ghost {
 }
 
 .hand .card + .card {
-  margin-left: calc(-1 * var(--overlap));
+  margin-left: calc(-1 * var(--hand-overlap, var(--overlap)));
 }
 
 .hand .card {

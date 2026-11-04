@@ -211,7 +211,29 @@ function renderHand() {
     fan.appendChild(fanRow(seatActions[0].cards));
   }
   document.querySelector('.me').classList.toggle('active', game.turn === 0 && game.winner < 0);
+  fitHand();
 }
+
+// A hand of 14 fits at the stylesheet's overlap, but at a table of three it can hold 20 cards. If the
+// row would be wider than its section, overlap the cards more: width = n*cw - (n-1)*overlap, so
+// overlap = (n*cw - available) / (n-1). The stylesheet's value is never reduced, only increased, and
+// it goes in --hand-overlap so the width of the highlighted section (computed from --overlap) is unchanged.
+const HAND_SLACK = 8; // px kept free for the tilt of the outer cards
+function fitHand() {
+  const me = document.querySelector('.me');
+  const n = $('hand').children.length;
+  me.style.removeProperty('--hand-overlap');
+  if (n < 2) return;
+  const cs = getComputedStyle(me);
+  const cw = parseFloat(cs.getPropertyValue('--cw'));
+  const base = parseFloat(cs.getPropertyValue('--overlap'));
+  const avail = me.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - HAND_SLACK;
+  const needed = (n * cw - avail) / (n - 1);
+  if (Number.isFinite(needed) && Number.isFinite(base) && needed > base) {
+    me.style.setProperty('--hand-overlap', `${Math.min(needed, cw - 8)}px`);
+  }
+}
+window.addEventListener('resize', fitHand);
 
 // Selecting cards: tap one to toggle it, or drag a finger (or the mouse) across
 // several to select, or deselect, all of them. 14 overlapped cards on a phone

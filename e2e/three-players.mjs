@@ -52,6 +52,16 @@ async function main() {
     'the other two seats are shown',
     await A.ev(`!document.getElementById('seat-1').hidden && !document.getElementById('seat-3').hidden`),
   );
+  // On a phone a hand of 18-20 cards must still sit inside the screen (the fan used to run off the edge).
+  await A.phone(390, 844);
+  await sleep(300);
+  const box = await A.ev(
+    `(() => { const r = [...document.getElementById('hand').children].map((c) => c.getBoundingClientRect()); return { left: Math.min(...r.map((x) => x.left)), right: Math.max(...r.map((x) => x.right)), vw: innerWidth }; })()`,
+  );
+  check('on a phone the whole hand is inside the screen', box.left >= 0 && box.right <= box.vw, JSON.stringify(box));
+  await A.shot('1b-phone-three');
+  await A.desktop();
+  await sleep(300);
   await A.shot('1-solo-three');
   await playOut(A);
   const soloRows = await A.ev(`document.querySelectorAll('#endHands .end-row').length`);
