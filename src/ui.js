@@ -528,6 +528,7 @@ $('helpBtn').addEventListener('click', () => {
   dlg.scrollTop = 0; // focus lands on the Close button at the bottom, which would scroll the page down
 });
 $('helpClose').addEventListener('click', () => $('helpDlg').close());
+$('helpX').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
 // The play log can be folded away. It starts folded on a phone, where the table needs the room.
 const logPanel = document.querySelector('.log');

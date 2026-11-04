@@ -68,6 +68,9 @@ async function main() {
   );
   await A.click('helpClose');
   check('and closes again', !(await A.ev(`document.getElementById('helpDlg').open`)));
+  await A.click('helpBtn');
+  await A.click('helpX');
+  check('the × in the corner also closes it', !(await A.ev(`document.getElementById('helpDlg').open`)));
   await A.click('adminBtn');
   await A.waitFor(
     `!document.getElementById('admin').hidden && document.getElementById('usersBody').children.length >= 1`,
