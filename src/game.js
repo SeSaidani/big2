@@ -7,14 +7,15 @@
 //   it in a row, it is back with the player who had it first, who must now
 //   play. The opening play (with the 3♦) cannot be passed.
 // - Last-card rule: if the next seat has one card left, any single the
-//   player to move plays must be their highest single (jokers tie as top).
+//   player to move plays must be their highest single (a joker counts as a 2♠
+//   that the real 2♠ beats; jokers tie each other).
 // - The round ends as soon as one player empties their hand.
 //
 // turnRules / viewRules are the single source of these constraints; the
 // validator, move generation, UI and every AI read from them.
 
-import { NUM_PLAYERS, THREE_OF_DIAMONDS, DECK_SIZE, dealHands, isJoker, FIRST_JOKER, cardName } from './cards.js';
-import { classify, beats, SINGLE } from './hands.js';
+import { NUM_PLAYERS, THREE_OF_DIAMONDS, DECK_SIZE, dealHands } from './cards.js';
+import { classify, beats, singleKeyOf, singleName, SINGLE } from './hands.js';
 import { legalPlays } from './moves.js';
 
 export function newGame(rng = Math.random, hands = dealHands(rng)) {
@@ -46,10 +47,11 @@ export function cloneState(s, withHistory = false) {
   };
 }
 
-// Key of the highest single in a hand (52 for any joker).
+// Key of the highest single in a hand. A joker ranks as a 2♠ that the real
+// 2♠ beats, so with both in hand the 2♠ is the highest.
 export function topSingleKey(hand) {
   let k = -1;
-  for (const c of hand) k = Math.max(k, isJoker(c) ? FIRST_JOKER : c);
+  for (const c of hand) k = Math.max(k, singleKeyOf(c));
   return k;
 }
 
@@ -100,8 +102,7 @@ export function validatePlay(s, cards) {
     if (!beats(cls, s.trick.cls)) return `That does not beat ${s.trick.cls.label}.`;
   }
   if (cls.type === SINGLE && rules.singleKey >= 0 && cls.key !== rules.singleKey) {
-    const top = rules.singleKey === FIRST_JOKER ? 'a joker' : cardName(rules.singleKey);
-    return `The next player has one card left, so a single must be your highest (${top}).`;
+    return `The next player has one card left, so a single must be your highest (${singleName(rules.singleKey)}).`;
   }
   return null;
 }

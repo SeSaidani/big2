@@ -17,8 +17,8 @@ import {
   SUIT_NAMES,
   RANK_TWO,
   SPADES,
-  FIRST_JOKER,
   isJoker,
+  cardId,
   rankOf,
   suitOf,
   cardName,
@@ -42,14 +42,21 @@ export const CAT_NAMES = ['', 'Straight', 'Flush', 'Full house', 'Four of a kind
 // strictly separated in one integer.
 const CAT_BASE = 2_000_000;
 
-// "The real card beats the joker": for pairs, triples and five-card hands,
-// key = base · TIE + (number of natural cards). Between otherwise-equal plays
-// the one with more real cards wins; equal joker counts still tie. Singles
-// need no tie-break (a lone joker never equals a natural card) and keep
-// key = card id, or 52 for a joker.
+// "The real card beats the joker", in every hand type: key = base · TIE +
+// (number of natural cards). A joker hand is ranked as the hand its jokers
+// represent, and between otherwise-equal plays the one with more real cards
+// wins; equal joker counts still tie. A lone joker is a 2♠ with no real card,
+// so nothing beats the real 2♠, the real 2♠ beats a joker, and a joker beats
+// everything below the 2♠.
 export const TIE = 8;
-export const baseKey = (cls) => (cls.type === 'single' ? cls.key : Math.floor(cls.key / TIE));
+export const baseKey = (cls) => Math.floor(cls.key / TIE);
 const withTie = (base, cards, jokers) => base * TIE + (cards - jokers);
+
+const TWO_OF_SPADES = cardId(RANK_TWO, SPADES);
+
+// The key classify() gives a lone card, and its inverse for messages.
+export const singleKeyOf = (c) => (isJoker(c) ? withTie(TWO_OF_SPADES, 1, 1) : withTie(c, 1, 0));
+export const singleName = (key) => (key % TIE === 0 ? 'a joker' : cardName((key - 1) / TIE));
 
 // Straight windows in ascending strength. Ranks are Big Two indices (3=0 ..
 // 2=12). A straight is worth its highest card, and in a straight the ace and
@@ -96,8 +103,8 @@ export function classify(cards) {
   if (n === 5) return classifyFive(nat, j);
 
   if (n === 1) {
-    if (j) return { type: SINGLE, cat: 0, key: FIRST_JOKER, label: 'Joker', jokerAs: [] };
-    return { type: SINGLE, cat: 0, key: nat[0], label: cardName(nat[0]), jokerAs: [] };
+    const label = j ? 'Joker' : cardName(nat[0]);
+    return { type: SINGLE, cat: 0, key: singleKeyOf(cards[0]), label, jokerAs: [] };
   }
   const r = nat.length ? rankOf(nat[0]) : RANK_TWO;
   for (const c of nat) if (rankOf(c) !== r) return null;

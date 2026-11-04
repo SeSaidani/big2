@@ -33,5 +33,11 @@ e2e/out/
 Thumbs.db
 desktop.ini
 
+# Deployment lives only on the owner's machine: the scripts, server configuration
+# and settings are deliberately not part of this (public) repository.
+deploy/
+.deploy.json
+backups/
+
 # Claude Code: personal, per-machine settings
 .claude/settings.local.json

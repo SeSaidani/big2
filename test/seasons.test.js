@@ -17,7 +17,7 @@ import {
   recentAudit,
 } from '../server/db.js';
 import { createUser } from '../server/auth.js';
-import { boot, makeUser } from './support.js';
+import { boot, makeUser, nextPhone } from './support.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 const DAY = 86400000;
@@ -26,7 +26,7 @@ const PW = 'correct-horse-battery';
 async function fresh(names) {
   const db = openDb(':memory:');
   const ids = {};
-  for (const n of names) ids[n] = (await createUser(db, n, PW)).id;
+  for (const n of names) ids[n] = (await createUser(db, n, PW, { phone: nextPhone() })).id;
   deleteSeason(db, 1); // drop the automatic "Season 1" so the test controls every range
   return { db, ids };
 }

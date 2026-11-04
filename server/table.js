@@ -253,8 +253,14 @@ export class Table {
     this.token++;
     if (this.status !== 'playing') return;
     const seat = this.seats[this.game.turn];
-    if (seat.kind !== 'ai') return;
     const tok = this.token;
+    if (seat.kind === 'human') {
+      // A person's turn: maybe text them (the notifier decides, after a short
+      // delay, if it is still their turn and they are away).
+      this.deps.notifier?.schedule(seat.userId, () => tok === this.token && this.status === 'playing');
+      return;
+    }
+    if (seat.kind !== 'ai') return;
     this.timer = setTimeout(() => this.#guarded(this.#aiMove(tok, seat.level)), this.deps.cfg.aiDelayMs);
     this.timer.unref?.();
   }

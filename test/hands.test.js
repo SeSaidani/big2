@@ -32,11 +32,13 @@ function cards(str) {
 }
 const C = (s) => classify(cards(s));
 
-test('singles: rank then suit, joker above 2♠, jokers do not beat each other', () => {
+test('singles: rank then suit; a joker is a 2♠ that the real 2♠ beats, and jokers do not beat each other', () => {
   assert.ok(beats(C('3♠'), C('3♥')));
   assert.ok(beats(C('4♦'), C('3♠')));
   assert.ok(beats(C('2♦'), C('A♠')));
-  assert.ok(beats(C('X'), C('2♠')));
+  assert.ok(beats(C('X'), C('2♥')));
+  assert.ok(!beats(C('X'), C('2♠')));
+  assert.ok(beats(C('2♠'), C('X')));
   assert.ok(!beats(C('X'), C('X')));
   assert.equal(C('X').type, SINGLE);
 });
@@ -163,8 +165,9 @@ test('the real card beats the joker when plays are otherwise equal', () => {
   // Equal joker counts still tie: neither beats the other.
   assert.ok(!beats(C('5♦ X'), C('5♥ X')));
   assert.ok(!beats(C('5♥ X'), C('5♦ X')));
-  // Singles are unchanged: a lone joker is still the top single.
-  assert.ok(beats(C('X'), C('2♠')));
+  // Singles: a lone joker is a 2♠, so the real 2♠ wins and nothing real above 2♥ loses to it.
+  assert.ok(beats(C('2♠'), C('X')));
+  assert.ok(!beats(C('X'), C('2♠')));
 });
 
 test('classification is invariant to card order and joker identity', () => {

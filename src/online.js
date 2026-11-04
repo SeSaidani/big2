@@ -28,8 +28,16 @@ async function call(method, path, body) {
 export const api = {
   config: () => call('GET', '/api/config'),
   me: () => call('GET', '/api/me'),
-  register: (name, password) => call('POST', '/api/register', { name, password }),
+  register: (name, password, phone) => call('POST', '/api/register', { name, password, phone }),
+  // My phone number: set it (a code is texted if verification is on), confirm the code, ask for another.
+  setPhone: (phone) => call('POST', '/api/phone', { phone }),
+  verifyPhone: (code) => call('POST', '/api/phone/verify', { code }),
+  resendCode: () => call('POST', '/api/phone/resend'),
+  setSms: (enabled) => call('POST', '/api/sms', { enabled }),
   login: (name, password) => call('POST', '/api/login', { name, password }),
+  // Sign in by texted code: ask for one (the reply is the same for any name), then log in with it.
+  loginCode: (name) => call('POST', '/api/login/code', { name }),
+  loginVerify: (name, code) => call('POST', '/api/login/verify', { name, code }),
   logout: () => call('POST', '/api/logout', {}),
   changePassword: (current, next) => call('POST', '/api/password', { current, next }),
   // season: 'current' | 'all' | a season id; sort: 'points' | 'perGame'
@@ -52,7 +60,9 @@ export const api = {
     overview: () => call('GET', '/api/admin/overview'),
     users: () => call('GET', '/api/admin/users'),
     audit: () => call('GET', '/api/admin/audit?limit=30'),
-    createUser: (name, password, isAdmin) => call('POST', '/api/admin/users', { name, password, isAdmin }),
+    createUser: (name, password, phone, isAdmin) =>
+      call('POST', '/api/admin/users', { name, password, phone, isAdmin }),
+    setPhone: (id, phone) => call('POST', `/api/admin/users/${id}/phone`, { phone }),
     resetPassword: (id, password) => call('POST', `/api/admin/users/${id}/password`, { password }),
     setDisabled: (id, disabled) => call('POST', `/api/admin/users/${id}/status`, { disabled }),
     setAdmin: (id, isAdmin) => call('POST', `/api/admin/users/${id}/role`, { isAdmin }),

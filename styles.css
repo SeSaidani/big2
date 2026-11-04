@@ -273,8 +273,13 @@ button.ghost {
   height: var(--mh);
   border-radius: 5px;
   border: 2px solid #fff;
-  background: repeating-linear-gradient(45deg, #7b1e2b 0 5px, #9a2a39 5px 10px);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+  background:
+    repeating-linear-gradient(45deg, transparent 0 4px, rgb(255 255 255 / 14%) 4px 5px),
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(255 255 255 / 14%) 4px 5px), #8a2233;
+  box-shadow:
+    inset 0 0 0 2px #8a2233,
+    inset 0 0 0 3px rgb(255 255 255 / 45%),
+    0 1px 3px rgb(0 0 0 / 40%);
 }
 
 .action {
@@ -380,6 +385,17 @@ button.ghost {
   gap: 8px;
   padding: 10px;
   border-radius: 14px;
+
+  /* The card size and overlap live here so the highlight can be exactly as wide as a full
+     14-card hand (plus its side padding), not as wide as the table. */
+  --overlap: 18px;
+  --px: 10px;
+
+  width: min(100%, calc(14 * var(--cw) - 13 * var(--overlap) + 2 * var(--px)));
+
+  /* ...but never narrower than its controls (online has an extra button), or they wrap. */
+  min-width: min(100%, max-content);
+  justify-self: center;
 }
 
 .me-head {
@@ -420,10 +436,6 @@ button.ghost {
   margin-left: -12px;
 }
 
-.played-fan .card .pip {
-  font-size: 1.6rem;
-}
-
 .hand {
   display: flex;
   padding: 44px 0 28px; /* headroom for lifted (selected) cards, room for the arc below */
@@ -439,7 +451,7 @@ button.ghost {
 }
 
 .hand .card + .card {
-  margin-left: -18px;
+  margin-left: calc(-1 * var(--overlap));
 }
 
 .hand .card {
@@ -477,16 +489,27 @@ button.ghost {
   gap: 8px;
 }
 
-/* Cards */
+/* Cards: the face is an inline SVG (see src/card-art.js) that fills the card. */
+.card .face {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .card {
   position: relative;
   flex: none;
   width: var(--cw);
   height: var(--ch);
   border-radius: 7px;
-  background: linear-gradient(160deg, #fff 0%, #f1ede4 100%);
+  background: linear-gradient(160deg, #fff 0%, #f3efe6 100%);
   color: var(--black);
-  box-shadow: 0 2px 5px rgb(0 0 0 / 40%);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 28%),
+    0 2px 5px rgb(0 0 0 / 40%);
 
   /* stylelint-disable-next-line property-no-vendor-prefix */
   -webkit-user-select: none;
@@ -500,72 +523,14 @@ button.ghost {
   color: var(--red);
 }
 
-.card .corner {
-  position: absolute;
-  top: 4px;
-  left: 5px;
-  font-weight: 700;
-  font-size: 0.95rem;
-  line-height: 1;
-  text-align: center;
-}
-
-.card .corner.br {
-  inset: auto 5px 4px auto;
-  transform: rotate(180deg);
-}
-
-.card .pip {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2.1rem;
-}
-
 .card.joker {
   background: linear-gradient(160deg, #fffbe8 0%, #f6e7b0 100%);
-}
-
-.card.joker .pip {
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  writing-mode: vertical-rl;
-}
-
-.card.joker .star {
-  position: absolute;
-  top: 4px;
-  left: 5px;
-  font-size: 0.95rem;
 }
 
 .card.mini {
   width: var(--mw);
   height: var(--mh);
   border-radius: 5px;
-}
-
-.card.mini .corner {
-  font-size: 0.72rem;
-  top: 3px;
-  left: 3px;
-}
-
-.card.mini .corner.br {
-  display: none;
-}
-
-.card.mini .pip {
-  font-size: 1.2rem;
-  padding-top: 10px;
-}
-
-.card.mini.joker .pip {
-  font-size: 0.5rem;
-  padding-top: 0;
 }
 
 /* Log (the side panel: the play log above, chat below) */
@@ -595,6 +560,46 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+/* The play log folds away: the heading is its toggle, with a chevron. */
+.log-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 0; /* the heading row, not a 44px touch button: landscape has no height to spare */
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.log-toggle::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-right: 3px;
+  border: solid currentcolor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.15s ease;
+}
+
+.log.collapsed .log-toggle::after {
+  transform: rotate(-45deg);
+}
+
+.log.collapsed > ol {
+  display: none;
+}
+
+.log.collapsed > h2 {
+  margin-bottom: 0;
+}
+
 .log li {
   padding: 5px 0;
   border-bottom: 1px solid rgb(255 255 255 / 6%);
@@ -615,7 +620,7 @@ button.ghost {
   font-size: 0.8rem;
 }
 
-/* End overlay and rules */
+/* End overlay and dialogs */
 .overlay {
   position: fixed;
   inset: 0;
@@ -666,16 +671,6 @@ dialog {
 
 dialog::backdrop {
   background: rgb(0 0 0 / 55%);
-}
-
-dialog ul {
-  padding-left: 18px;
-  line-height: 1.5;
-}
-
-.keys {
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 /* Online mode */
@@ -1033,9 +1028,6 @@ button.ghost.active {
   }
 
   .hand {
-    --cw: 46px;
-    --ch: 66px;
-
     order: 4;
     padding: 30px 0 0;
     min-height: calc(var(--ch) + 30px - 24px);
@@ -1047,15 +1039,6 @@ button.ghost.active {
     height: 29px;
   }
 
-  .card.mini .corner {
-    font-size: 0.5rem;
-  }
-
-  .card.mini .pip {
-    font-size: 0.7rem;
-    padding-top: 4px;
-  }
-
   .center {
     gap: 3px;
   }
@@ -1063,10 +1046,6 @@ button.ghost.active {
   .trick-cards {
     --cw: 30px;
     --ch: 43px;
-  }
-
-  .trick-cards .card .pip {
-    font-size: 1rem;
   }
 
   .trick-cards:not(:empty) {
@@ -1077,21 +1056,25 @@ button.ghost.active {
     font-size: 0.85rem;
   }
 
+  /* "played by" shares the line with the hand's name: with all three last plays showing, a
+     two-line label made the table 7px taller than the screen. */
+  .trick-label small {
+    display: inline;
+    margin-left: 0.4em;
+  }
+
   .played-fan {
     display: none;
   }
 
   .me {
+    --cw: 46px;
+    --ch: 66px;
+    --overlap: 24px;
+    --px: 0px;
+
     padding: 2px 0 0;
     gap: 2px;
-  }
-
-  .hand .card + .card {
-    margin-left: -24px;
-  }
-
-  .hand .card .pip {
-    font-size: 1.3rem;
   }
 
   .hand .card.selected {
@@ -1204,29 +1187,6 @@ button.ghost.active {
     border-radius: 4px;
   }
 
-  .card.mini .corner {
-    font-size: 0.55rem;
-    top: 2px;
-    left: 2px;
-  }
-
-  .card.mini .pip {
-    font-size: 0.8rem;
-    padding-top: 6px;
-  }
-
-  .card .corner {
-    font-size: 0.75rem;
-  }
-
-  .card .pip {
-    font-size: 1.5rem;
-  }
-
-  .card.joker .pip {
-    font-size: 0.55rem;
-  }
-
   .trick-cards {
     --cw: 34px;
     --ch: 49px;
@@ -1234,14 +1194,6 @@ button.ghost.active {
 
   .trick-cards .card + .card {
     margin-left: -8px;
-  }
-
-  .trick-cards .card .pip {
-    font-size: 1.1rem;
-  }
-
-  .trick-cards .card .corner {
-    font-size: 0.6rem;
   }
 
   .trick-label {
@@ -1266,10 +1218,6 @@ button.ghost.active {
     padding-bottom: 8px;
   }
 
-  .played-fan .card .pip {
-    font-size: 1.1rem;
-  }
-
   .played-fan .card + .card {
     margin-left: -8px;
   }
@@ -1278,6 +1226,11 @@ button.ghost.active {
      cards can be wide enough to tap while only their tops show. Controls sit
      above it. A selected card rises well clear of the row. */
   .me {
+    --cw: 54px;
+    --ch: 78px;
+    --overlap: 32px; /* 22px of each card stays exposed to the finger */
+    --px: 2px;
+
     padding: 6px 2px;
     min-width: 0;
   }
@@ -1299,23 +1252,11 @@ button.ghost.active {
 
   .hand {
     order: 4;
-
-    --cw: 54px;
-    --ch: 78px;
-
     padding: 46px 0 0;
     min-height: calc(var(--ch) + 46px - 36px);
     margin-bottom: -36px; /* the bottom of the cards falls below the table edge, which clips it */
     max-width: 100%;
     touch-action: pan-y;
-  }
-
-  .hand .card + .card {
-    margin-left: -32px; /* 22px of each card stays exposed to the finger */
-  }
-
-  .hand .card .pip {
-    font-size: 1.6rem;
   }
 
   .hand .card.selected {

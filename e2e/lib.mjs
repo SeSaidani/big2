@@ -228,10 +228,17 @@ export const STEP = `(async () => {
   if (!$('passBtn').disabled) { $('passBtn').click(); return 'pass'; }
   return 'stuck';
 })()`;
-export async function launch({ port, cdp, tmpPrefix }) {
+export async function launch({ port, cdp, tmpPrefix, extraEnv = {} }) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), tmpPrefix));
   const dbFile = path.join(tmp, 'e2e.db');
-  const env = { ...process.env, PORT: String(port), DB_FILE: dbFile, AI_DELAY_MS: '90' };
+  const env = {
+    ...process.env,
+    PORT: String(port),
+    DB_FILE: dbFile,
+    AI_DELAY_MS: '90',
+    SMS_PROVIDER: 'none',
+    ...extraEnv,
+  }; // no texting in these runs, so no codes to verify
   const state = { server: null, out: '' };
   state.start = async () => {
     state.out = '';
@@ -244,7 +251,7 @@ export async function launch({ port, cdp, tmpPrefix }) {
   const makeAdmin = (name, password) =>
     spawnSync(process.execPath, ['server/admin.js', 'make-admin', name], {
       cwd: ROOT,
-      env: { ...env, BIG2_PASSWORD: password },
+      env: { ...env, BIG2_PASSWORD: password, BIG2_PHONE: '+447700900001' },
       encoding: 'utf8',
     });
   const chrome = spawn(CHROME, [
