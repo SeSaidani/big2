@@ -596,7 +596,7 @@ async function enterOnline() {
 function beginOnline() {
   $('who').textContent = user.name;
   $('lobbyUser').textContent = user.name;
-  show('logoutBtn', true);
+  show('account', true);
   show('passwordBtn', true);
   show('phoneBtn', true);
   show('adminBtn', user.isAdmin);
@@ -1421,6 +1421,17 @@ async function submitPassword() {
 // ---- wiring ----
 $('modeSolo').addEventListener('click', () => mode !== 'solo' && enterSolo());
 $('modeOnline').addEventListener('click', () => mode !== 'online' && enterOnline());
+// The account menu closes when an item is chosen, on a click elsewhere, or on Escape.
+const account = $('account');
+account.addEventListener('click', (e) => {
+  if (e.target.closest('.menu button')) account.open = false;
+});
+document.addEventListener('click', (e) => {
+  if (account.open && !account.contains(e.target)) account.open = false;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && account.open) account.open = false;
+});
 $('logoutBtn').addEventListener('click', async () => {
   try {
     await api.logout();
@@ -1498,7 +1509,7 @@ async function boot() {
   }
   if (user) {
     $('who').textContent = user.name;
-    show('logoutBtn', true);
+    show('account', true);
   }
   if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
   else startGame();

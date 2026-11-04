@@ -108,12 +108,16 @@
           </select>
         </label>
         <span id="record" class="record solo-only"></span>
-        <span id="who" class="record"></span>
-        <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
-        <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
-        <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
-        <button type="button" id="logoutBtn" class="ghost" hidden>Log out</button>
         <button type="button" id="newBtn" class="solo-only">New game</button>
+        <details id="account" class="account" hidden>
+          <summary id="who" aria-label="Account menu"></summary>
+          <div class="menu">
+            <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
+            <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
+            <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
+            <button type="button" id="logoutBtn" class="ghost">Log out</button>
+          </div>
+        </details>
       </div>
     </header>
 

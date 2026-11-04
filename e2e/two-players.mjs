@@ -42,6 +42,19 @@ async function main() {
   await A.goto(BASE);
   await A.signIn('boss', ADMIN_PW);
   check('admin signs in and sees the Admin button', await A.visible('adminBtn'));
+  check(
+    'the account menu shows the name and starts closed',
+    (await A.text('who')) === 'boss' && !(await A.ev(`document.getElementById('account').open`)),
+  );
+  await A.click('who');
+  check(
+    'the account menu opens with Admin, Phone, Password and Log out',
+    await A.ev(
+      `document.getElementById('account').open && ['adminBtn', 'phoneBtn', 'passwordBtn', 'logoutBtn'].every((id) => document.getElementById(id).closest('.menu') && !document.getElementById(id).hidden)`,
+    ),
+  );
+  await A.ev(`document.body.click()`);
+  check('a click elsewhere closes the account menu', !(await A.ev(`document.getElementById('account').open`)));
   await A.click('adminBtn');
   await A.waitFor(
     `!document.getElementById('admin').hidden && document.getElementById('usersBody').children.length >= 1`,
@@ -64,6 +77,7 @@ async function main() {
   await B.goto(BASE);
   await B.signIn('alice', TEMP_PW);
   check('a non-admin has no Admin button', !(await B.visible('adminBtn')));
+  check('a non-admin still has Log out in the menu', await B.visible('logoutBtn'));
   await B.click('passwordBtn');
   await B.ev(
     `document.getElementById('pwCurrent').value=${JSON.stringify(TEMP_PW)}; document.getElementById('pwNext').value=${JSON.stringify(NEW_PW)}; document.getElementById('pwOk').click()`,

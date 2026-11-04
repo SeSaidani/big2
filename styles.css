@@ -131,6 +131,61 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+/* The account menu: your name, and what you can do with the account. */
+.account {
+  position: relative;
+}
+
+.account > summary {
+  display: block;
+  padding: 7px 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid #3c8a68;
+  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+/* Safari still draws its own triangle unless this is hidden. */
+
+/* stylelint-disable-next-line selector-no-vendor-prefix */
+.account > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account > summary::after {
+  content: ' ▾';
+  color: var(--muted);
+}
+
+.account[open] > summary,
+.account > summary:hover {
+  background: #1f6b4b;
+}
+
+.account .menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+  padding: 6px;
+  background: #0b2a1d;
+  border: 1px solid #3c8a68;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 50%);
+}
+
+.account .menu button {
+  width: 100%;
+  text-align: left;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 1fr 270px;
