@@ -22,6 +22,13 @@
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
         <label class="solo-only"
+          >Players
+          <select id="playerCount">
+            <option value="4">4</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+        <label class="solo-only"
           >AI
           <select id="level">
             <option value="easy">Easy</option>
@@ -79,6 +86,13 @@
             </p>
             <div id="gameBox"></div>
             <div class="row" id="createRow" hidden>
+              <label
+                >Players
+                <select id="newSeats">
+                  <option value="4" selected>4</option>
+                  <option value="3">3</option>
+                </select>
+              </label>
               <label
                 >AI level
                 <select id="newLevel">

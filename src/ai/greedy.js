@@ -106,9 +106,10 @@ export function greedyMove(state, rng = Math.random, eps = 0.05) {
   const hand = state.hands[p];
   const trick = state.trick;
   let minOpp = 99;
-  for (let q = 0; q < 4; q++) if (q !== p) minOpp = Math.min(minOpp, state.hands[q].length);
+  const n = state.hands.length;
+  for (let q = 0; q < n; q++) if (q !== p) minOpp = Math.min(minOpp, state.hands[q].length);
   // Last-card rule: singles must be the highest when the next seat has one card.
-  const forcedTop = state.hands[(p + 1) % 4].length === 1;
+  const forcedTop = state.hands[(p + 1) % n].length === 1;
   // The highest single: a real 2♠ outranks a joker even though jokers sort last.
   const topKey = topSingleKey(hand);
   const top = hand.find((c) => singleKeyOf(c) === topKey);

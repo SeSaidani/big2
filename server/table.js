@@ -1,4 +1,4 @@
-// The one table: four seats, the authoritative game state, AI seats, chat and
+// The one table: three or four seats, the authoritative game state, AI seats, chat and
 // scoring. Clients never see `game` itself, only view(userId), built from
 // observe() (that seat's hand plus public information) and whitelisted field
 // by field. Other hands are revealed only once the round is over.
@@ -21,6 +21,7 @@ import {
   checkInvariants,
 } from '../src/game.js';
 import { classify } from '../src/hands.js';
+import { NUM_PLAYERS } from '../src/cards.js';
 import { scoreRound } from '../src/scoring.js';
 import { recordGame, recordCancelled } from './db.js';
 
@@ -41,11 +42,11 @@ const KEEP_CHAT = 100;
 export class Table {
   // deps: { db, pool, cfg: { aiDelayMs, rng, now }, isOnline(userId), chatLimit,
   //         persist(table), onView(table), onChat(table, msg), onList(), onClose(table), log(...) }
-  constructor(id, host, aiLevel, deps) {
+  constructor(id, host, aiLevel, deps, seatCount = NUM_PLAYERS) {
     this.id = id;
     this.aiLevel = aiLevel;
     this.deps = deps;
-    this.seats = host ? [Table.human(host), EMPTY, EMPTY, EMPTY] : [EMPTY, EMPTY, EMPTY, EMPTY];
+    this.seats = Array.from({ length: seatCount }, (_, i) => (host && i === 0 ? Table.human(host) : EMPTY));
     this.hostId = host ? host.id : null;
     this.status = 'waiting'; // waiting | playing | done | closed
     this.game = null;
@@ -146,7 +147,7 @@ export class Table {
       const label = this.aiLevel[0].toUpperCase() + this.aiLevel.slice(1);
       return { kind: 'ai', level: this.aiLevel, name: `${label} bot ${bots}` };
     });
-    this.game = newGame(this.deps.cfg.rng);
+    this.game = newGame(this.deps.cfg.rng, null, this.seats.length);
     this.result = null;
     this.status = 'playing';
     this.startedAt = this.deps.cfg.now();
@@ -361,6 +362,7 @@ export class Table {
       status: this.status,
       host: this.hostName,
       aiLevel: this.aiLevel,
+      seats: this.seats.length,
       players: this.humans().map((s) => s.name),
       humans: this.humans().length,
     };

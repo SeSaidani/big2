@@ -49,7 +49,7 @@ export const api = {
   seasons: () => call('GET', '/api/seasons'),
   game: () => call('GET', '/api/game'),
   // The one game
-  createGame: (aiLevel) => call('POST', '/api/game', { aiLevel }),
+  createGame: (aiLevel, seats) => call('POST', '/api/game', { aiLevel, seats }),
   join: () => call('POST', '/api/game/join'),
   leave: () => call('POST', '/api/game/leave'),
   start: () => call('POST', '/api/game/start'),

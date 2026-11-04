@@ -10,8 +10,12 @@ import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
 import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
 
-const SOLO_NAMES = ['You', 'West', 'North', 'East'];
-let NAMES = SOLO_NAMES;
+// Seats are numbered clockwise from you. At a table of four they sit West, North, East; at three, West and East.
+const SOLO_NAMES = { 4: ['You', 'West', 'North', 'East'], 3: ['You', 'West', 'East'] };
+let NAMES = SOLO_NAMES[4];
+const noActions = (n) => new Array(n).fill(null);
+// The page has a North seat element; a table of three leaves it empty and puts seat 2 in the East one.
+const seatElId = (p, n) => (n === 3 && p === 2 ? 3 : p);
 const AI_DELAY_MS = 750;
 const TRICK_PAUSE_MS = 1200;
 const AI_TIMEOUT_MS = 10000;
@@ -21,12 +25,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let game = null;
 let selected = new Set();
 let shownTrick = null; // stays visible briefly after a trick closes
-let seatActions = [null, null, null, null];
+let seatActions = noActions(4);
 let thinking = -1;
 let busy = false;
 let gen = 0; // bumps on New game so stale async work is dropped
 let sortMode = localStorage.getItem('big2.sort') || 'rank';
 let level = localStorage.getItem('big2.level') || 'medium';
+let soloPlayers = localStorage.getItem('big2.players') === '3' ? 3 : 4; // seats at a solo table
 // Online mode (see the section at the end of this file).
 let mode = 'solo'; // 'solo' | 'online'
 let user = null;
@@ -126,7 +131,7 @@ function fanRow(cards, deg = 3) {
 
 // ---------- Rendering ----------
 function renderSeat(p) {
-  const el = $(`seat-${p}`);
+  const el = $(`seat-${seatElId(p, game.hands.length)}`);
   el.classList.toggle('active', game.turn === p && game.winner < 0);
   el.innerHTML = '';
   const n = game.hands[p].length;
@@ -285,7 +290,9 @@ function renderRecord() {
 }
 
 function render() {
-  for (const p of [1, 2, 3]) renderSeat(p);
+  const n = game.hands.length;
+  $('seat-2').hidden = n === 3; // the North seat is empty at a table of three
+  for (let p = 1; p < n; p++) renderSeat(p);
   renderCenter();
   renderHand();
   renderSelection();
@@ -312,11 +319,11 @@ function log(text, cls = '', cards = null) {
 function startGame() {
   gen++;
   pending.clear();
-  NAMES = SOLO_NAMES;
-  game = newGame();
+  NAMES = SOLO_NAMES[soloPlayers];
+  game = newGame(Math.random, null, soloPlayers);
   selected = new Set();
   shownTrick = null;
-  seatActions = [null, null, null, null];
+  seatActions = noActions(soloPlayers);
   thinking = -1;
   busy = false;
   $('log').innerHTML = '';
@@ -379,7 +386,7 @@ async function commit(cards) {
   if (cards) {
     shownTrick = { cards, cls, by: p };
     // A new trick starts: clear the previous trick's lead-pass markers.
-    for (let q = 0; q < 4; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
+    for (let q = 0; q < seatActions.length; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
     log(`${NAMES[p]}: ${describe(cls)}`, p === 0 ? 'you' : '', cards);
     skipped = autoSkip(game);
     for (const q of skipped) seatActions[q] = 'cantbeat';
@@ -402,7 +409,7 @@ async function commit(cards) {
     await sleep(TRICK_PAUSE_MS);
     if (g !== gen) return;
     shownTrick = null;
-    seatActions = [null, null, null, null];
+    seatActions = noActions(game.hands.length);
   }
   continueTurn();
 }
@@ -419,7 +426,7 @@ function endRound() {
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
   box.innerHTML = '';
-  for (let p = 0; p < 4; p++) {
+  for (let p = 0; p < game.hands.length; p++) {
     if (p === w) continue;
     const row = document.createElement('div');
     row.className = 'end-row';
@@ -478,6 +485,12 @@ $('logToggle').addEventListener('click', () => {
   const open = logPanel.classList.contains('collapsed');
   setLogOpen(open);
   localStorage.setItem('big2.log', open ? 'open' : 'closed');
+});
+$('playerCount').value = String(soloPlayers);
+$('playerCount').addEventListener('change', (e) => {
+  soloPlayers = e.target.value === '3' ? 3 : 4;
+  localStorage.setItem('big2.players', String(soloPlayers));
+  if (mode === 'solo') startGame();
 });
 $('level').value = level;
 $('level').addEventListener('change', (e) => {
@@ -693,7 +706,7 @@ function renderLobbyHome() {
   }
   const names = g.players.length ? g.players.join(', ') : 'nobody yet';
   const state = { waiting: 'waiting to start', playing: 'in progress', done: 'just finished' }[g.status] || g.status;
-  line(`${g.host}'s game is ${state}. Players: ${names}. ${g.aiLevel} AI fills empty seats.`);
+  line(`${g.host}'s game is ${state}. Players: ${names}. ${g.seats} seats, ${g.aiLevel} AI fills the empty ones.`);
   const row = document.createElement('div');
   row.className = 'row';
   if (table) {
@@ -834,7 +847,7 @@ function clearTrickReset() {
 
 function clearTrickDisplay() {
   shownTrick = null;
-  seatActions = [null, null, null, null];
+  seatActions = noActions(game ? game.hands.length : 4);
 }
 
 // A new view from the server (or the reply to my own move). Views carry a
@@ -908,7 +921,7 @@ function applyEvents(events, replay) {
   for (const e of events) {
     const who = NAMES[e.p];
     if (e.cards) {
-      for (let q = 0; q < 4; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
+      for (let q = 0; q < seatActions.length; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
       if (!replay) seatActions[e.p] = { cards: e.cards, cls: e.cls };
       shownTrick = { cards: e.cards, cls: e.cls, by: e.p };
       lastPlay = e;
@@ -952,7 +965,7 @@ function endOnlineRound(t, alreadyShown) {
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
   box.innerHTML = '';
-  for (let p = 0; p < 4; p++) {
+  for (let p = 0; p < game.hands.length; p++) {
     const row = document.createElement('div');
     row.className = 'end-row';
     row.innerHTML = `<span class="who">${NAMES[p]}</span>`;
@@ -960,7 +973,7 @@ function endOnlineRound(t, alreadyShown) {
     cards.className = 'cards';
     if (p !== w) cards.appendChild(cardRow(sortByRank(game.hands[p])));
     row.appendChild(cards);
-    const d = r ? r.delta[unrot(p, t.you)] : 0;
+    const d = r ? r.delta[unrot(p, t.you, t.seats.length)] : 0;
     const pts = document.createElement('span');
     pts.className = `pts ${d > 0 ? 'win' : 'loss'}`;
     pts.textContent = `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)}`;
@@ -1421,7 +1434,9 @@ $('resetCancel').addEventListener('click', () => $('resetDlg').close());
 $('resetGen').addEventListener('click', () => ($('resetPw').value = randomPassword()));
 $('genPwBtn').addEventListener('click', () => ($('newUserPw').value = randomPassword()));
 $('createUserBtn').addEventListener('click', submitCreateUser);
-$('createBtn').addEventListener('click', () => gameAction(() => api.createGame($('newLevel').value), 'lobbyMsg'));
+$('createBtn').addEventListener('click', () =>
+  gameAction(() => api.createGame($('newLevel').value, Number($('newSeats').value)), 'lobbyMsg'),
+);
 $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
 $('leaveBtn').addEventListener('click', backToLobby);

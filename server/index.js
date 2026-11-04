@@ -571,7 +571,7 @@ export function createApp(opts = {}) {
     if (p === '/api/game' && m === 'POST') {
       const body = await readJson(req);
       requirePhone(user);
-      lobby.create(user, body.aiLevel);
+      lobby.create(user, body.aiLevel, body.seats);
       return gameReply(res, user, 201);
     }
     const act = /^\/api\/game\/(join|leave|start|move|chat)$/.exec(p);

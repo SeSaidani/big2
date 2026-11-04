@@ -42,8 +42,8 @@ function simulate(seed, onState) {
 
 test('rot and unrot are inverse for every viewer', () => {
   for (let you = 0; you < 4; you++) {
-    assert.equal(rot(you, you), 0);
-    for (let d = 0; d < 4; d++) assert.equal(rot(unrot(d, you), you), d);
+    assert.equal(rot(you, you, 4), 0);
+    for (let d = 0; d < 4; d++) assert.equal(rot(unrot(d, you, 4), you, 4), d);
   }
 });
 
@@ -51,10 +51,10 @@ test('the mirror is a faithful, rotated copy: you at seat 0, hidden hands as pla
   simulate(1, (s) => {
     for (let you = 0; you < 4; you++) {
       const m = mirrorState(tableFor(s, you));
-      assert.equal(m.turn, rot(s.turn, you));
+      assert.equal(m.turn, rot(s.turn, you, 4));
       assert.deepEqual(m.hands[0], s.hands[you]);
       for (let d = 1; d < 4; d++) {
-        const q = unrot(d, you);
+        const q = unrot(d, you, 4);
         assert.equal(m.hands[d].length, s.hands[q].length);
         assert.ok(
           m.hands[d].every((c) => c === -1),
@@ -62,7 +62,7 @@ test('the mirror is a faithful, rotated copy: you at seat 0, hidden hands as pla
         );
         assert.equal(m.passed[d], s.passed[q]);
       }
-      assert.equal(m.trick ? m.trick.by : null, s.trick ? rot(s.trick.by, you) : null);
+      assert.equal(m.trick ? m.trick.by : null, s.trick ? rot(s.trick.by, you, 4) : null);
     }
   });
 });
@@ -96,9 +96,9 @@ test('when the round is over the mirror shows every hand', () => {
   const { s } = simulate(3, () => {});
   const you = 2;
   const m = mirrorState(tableFor(s, you, s.hands));
-  assert.equal(m.winner, rot(s.winner, you));
-  for (let d = 0; d < 4; d++) assert.deepEqual(m.hands[d], s.hands[unrot(d, you)]);
-  assert.equal(m.hands[rot(s.winner, you)].length, 0);
+  assert.equal(m.winner, rot(s.winner, you, 4));
+  for (let d = 0; d < 4; d++) assert.deepEqual(m.hands[d], s.hands[unrot(d, you, 4)]);
+  assert.equal(m.hands[rot(s.winner, you, 4)].length, 0);
 });
 
 test('newEvents reports each history entry once, classified, in display seats', () => {
@@ -116,7 +116,7 @@ test('newEvents reports each history entry once, classified, in display seats', 
     assert.deepEqual(got.map(kindOf), kinds);
     assert.deepEqual(
       got.map((e) => e.p),
-      s.history.map((h) => rot(h.p, you)),
+      s.history.map((h) => rot(h.p, you, 4)),
     );
     assert.ok(got.filter((e) => e.cards).every((e) => e.cls && e.cls.type));
     // A late joiner who starts from zero sees the same list.
