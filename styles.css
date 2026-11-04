@@ -387,6 +387,9 @@ button.ghost {
   --px: 10px;
 
   width: min(100%, calc(14 * var(--cw) - 13 * var(--overlap) + 2 * var(--px)));
+
+  /* ...but never narrower than its controls (online has an extra button), or they wrap. */
+  min-width: min(100%, max-content);
   justify-self: center;
 }
 
@@ -603,6 +606,46 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+/* The play log folds away: the heading is its toggle, with a chevron. */
+.log-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 0; /* the heading row, not a 44px touch button: landscape has no height to spare */
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.log-toggle::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-right: 3px;
+  border: solid currentcolor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.15s ease;
+}
+
+.log.collapsed .log-toggle::after {
+  transform: rotate(-45deg);
+}
+
+.log.collapsed > ol {
+  display: none;
+}
+
+.log.collapsed > h2 {
+  margin-bottom: 0;
+}
+
 .log li {
   padding: 5px 0;
   border-bottom: 1px solid rgb(255 255 255 / 6%);
@@ -623,7 +666,7 @@ button.ghost {
   font-size: 0.8rem;
 }
 
-/* End overlay and rules */
+/* End overlay and dialogs */
 .overlay {
   position: fixed;
   inset: 0;
@@ -674,16 +717,6 @@ dialog {
 
 dialog::backdrop {
   background: rgb(0 0 0 / 55%);
-}
-
-dialog ul {
-  padding-left: 18px;
-  line-height: 1.5;
-}
-
-.keys {
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 /* Online mode */

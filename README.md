@@ -127,7 +127,7 @@ straights. You can pass even with the lead. If the next player has one card left
 real card always beats a joker standing for the same thing: a joker hand ranks as the hand its jokers represent, and
 the real hand wins any exact tie. So nothing beats the real 2♠, a lone joker is a 2♠ that loses to it (but beats the
 2♥ and everything below), and two jokers cannot beat each other. If nobody left can beat a play, the others are passed
-automatically. The in-game **Rules** dialog has the full text.
+automatically.
 
 ## Layout
 

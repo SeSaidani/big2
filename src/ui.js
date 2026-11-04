@@ -480,7 +480,18 @@ $('sortBtn').addEventListener('click', () => {
 });
 $('newBtn').addEventListener('click', startGame);
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
-$('rulesBtn').addEventListener('click', () => $('rules').showModal());
+// The play log can be folded away. It starts folded on a phone, where the table needs the room.
+const logPanel = document.querySelector('.log');
+function setLogOpen(open) {
+  logPanel.classList.toggle('collapsed', !open);
+  $('logToggle').setAttribute('aria-expanded', String(open));
+}
+setLogOpen((localStorage.getItem('big2.log') || (PHONE.matches ? 'closed' : 'open')) === 'open');
+$('logToggle').addEventListener('click', () => {
+  const open = logPanel.classList.contains('collapsed');
+  setLogOpen(open);
+  localStorage.setItem('big2.log', open ? 'open' : 'closed');
+});
 $('level').value = level;
 $('level').addEventListener('change', (e) => {
   level = e.target.value;

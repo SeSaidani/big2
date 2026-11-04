@@ -35,7 +35,6 @@
         <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
         <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
         <button type="button" id="logoutBtn" class="ghost online-only" hidden>Log out</button>
-        <button type="button" id="rulesBtn" class="ghost">Rules</button>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
     </header>
@@ -243,7 +242,11 @@
       </main>
 
       <aside class="log" aria-label="Play log and chat">
-        <h2>Play log</h2>
+        <h2>
+          <button type="button" id="logToggle" class="log-toggle" aria-expanded="true" aria-controls="log">
+            Play log
+          </button>
+        </h2>
         <ol id="log"></ol>
         <section id="chat" class="chat" hidden>
           <h2>Chat</h2>
@@ -370,69 +373,6 @@
         <button type="button" id="registerBtn">Create account</button>
         <button type="button" id="loginCancel" class="ghost">Cancel</button>
       </div>
-    </dialog>
-
-    <dialog id="rules">
-      <h2>Rules</h2>
-      <ul>
-        <li>56 cards: a standard deck plus 4 jokers. Everyone gets 14 cards.</li>
-        <li>Ranks: 3 &lt; 4 &lt; … &lt; K &lt; A &lt; 2. Suits break ties: ♦ &lt; ♣ &lt; ♥ &lt; ♠.</li>
-        <li>The holder of 3♦ leads first, and that play must include the 3♦.</li>
-        <li>
-          Play a single, pair, triple or five-card hand. Followers must play the same number of cards and beat it, or
-          pass. Once you pass you're out until the trick ends.
-        </li>
-        <li>
-          You can always pass, even with the lead: the lead moves to the next player. If all four players pass the lead
-          in a row, it's back with whoever had it first, and they must play. (The opening 3♦ play can't be passed.)
-        </li>
-        <li>
-          <b>Last card:</b> if the next player has one card left, any single you play must be your highest (any joker
-          counts as highest). Pairs and five-card hands are unaffected.
-        </li>
-        <li>
-          Five-card hands, low to high: straight, flush, full house, four of a kind + kicker, straight flush, five of a
-          kind.
-        </li>
-        <li>
-          A straight is worth its highest card, and the ace and 2 are low in the two wrap-around straights: A-2-3-4-5
-          (5-high) and 2-3-4-5-6 (6-high) are the weakest, then 3-4-5-6-7 up to 10-J-Q-K-A on top. J-Q-K-A-2 is not
-          allowed. Equal straights are decided by the suit of the highest card.
-        </li>
-        <li>Flushes compare highest card first, then the next, then suit.</li>
-        <li>
-          <b>Jokers are wild:</b> each one becomes whatever card makes its hand strongest. A joker played alone beats
-          any natural single, but jokers don't beat each other.
-        </li>
-        <li>
-          <b>The real card beats the joker:</b> if two plays would otherwise be equal, the one with more real cards
-          wins. So 5♣ 5♠ beats 5♦ + joker, and real 2♣ 2♠ beats two jokers.
-        </li>
-        <li>
-          If nobody left in the trick can beat a play, they're all passed automatically and the player who made it leads
-          again straight away.
-        </li>
-        <li>The first player to empty their hand wins the round.</li>
-        <li>
-          <b>Online scoring:</b> each loser pays the winner per card left in hand: 1 point a card for 1-7 cards, 2 for
-          8-10, 3 for 11-13, and 4 a card if they never played. Going out with a straight flush or five of a kind
-          doubles every payment. Scores always add up to zero.
-        </li>
-        <li>
-          <b>Online games:</b> only one game runs at a time and an admin starts it. Once a game has started it belongs
-          to the people seated until it finishes or an admin cancels it (a cancelled game is not scored). There is no
-          turn timer: the game waits for anyone who is offline, and you can go back to the lobby and return to your seat
-          at any time.
-        </li>
-        <li><b>Chat</b> is available while two or more people are at the table.</li>
-        <li>
-          <b>Texts:</b> every account has a mobile number. When it becomes your turn and you are not looking at the
-          game, you get one text with a link (never any cards), at most one every ten minutes. You can switch this off
-          in the Phone dialog. Your number is only used for this, and only you and the server ever see it.
-        </li>
-      </ul>
-      <p class="keys">Keys: Enter = play · P = pass · Esc = clear selection</p>
-      <form method="dialog"><button type="submit" class="primary">Got it</button></form>
     </dialog>
 
     <script type="module" src="src/ui.js"></script>
