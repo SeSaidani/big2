@@ -1324,3 +1324,19 @@ button.ghost.active {
     --ch: 80px;
   }
 }
+
+/* The sign-in page, shown instead of the game until you are signed in. */
+.signin {
+  width: min(440px, calc(100% - 32px));
+  margin: 12vh auto 0;
+}
+
+.signin h1 {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+}
+
+.signin h1 span {
+  font-size: 0.8rem;
+  font-weight: 400;
+}

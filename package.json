@@ -9,7 +9,7 @@
     "url": "git+https://github.com/SeSaidani/big2.git"
   },
   "scripts": {
-    "start": "node tools/serve.js",
+    "start": "node server/index.js",
     "online": "node server/index.js",
     "admin": "node server/admin.js",
     "test": "node --test \"test/*.test.js\"",
@@ -18,7 +18,7 @@
     "lint": "npm run lint:js && npm run lint:css && npm run lint:html",
     "lint:js": "eslint .",
     "lint:css": "stylelint \"**/*.css\"",
-    "lint:html": "html-validate index.html",
+    "lint:html": "html-validate index.html signin.html",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run format:check && npm run lint && npm test"

@@ -40,7 +40,6 @@ async function main() {
 
   // --- admin signs in and creates a user in the UI ---
   await A.goto(BASE);
-  await A.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'solo page loads');
   await A.signIn('boss', ADMIN_PW);
   check('admin signs in and sees the Admin button', await A.visible('adminBtn'));
   await A.click('adminBtn');
@@ -63,7 +62,6 @@ async function main() {
 
   // --- the new user signs in with the temporary password, then changes it ---
   await B.goto(BASE);
-  await B.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'B solo page loads');
   await B.signIn('alice', TEMP_PW);
   check('a non-admin has no Admin button', !(await B.visible('adminBtn')));
   await B.click('passwordBtn');
@@ -285,8 +283,12 @@ async function main() {
   await A.ev(
     `(() => { const row = [...document.querySelectorAll('#usersBody tr')].find(r => r.children[0].textContent === 'alice'); const b = [...row.querySelectorAll('button')].find(x => x.textContent === 'Click again to confirm'); b.click(); })()`,
   );
-  await B.waitFor(`document.getElementById('loginDlg').open`, 15000, 'alice is signed out');
-  check('disabling a user signs them out of their open page', (await B.text('loginErr')).includes('session has ended'));
+  await B.waitFor(
+    `!!document.getElementById('form') && !document.getElementById('hand')`,
+    15000,
+    'alice is signed out',
+  );
+  check('disabling a user sends their open page back to the sign-in page', true);
   const auditText = await A.ev(
     `(async () => { await new Promise(r => setTimeout(r, 600)); return document.getElementById('auditList').textContent; })()`,
   );

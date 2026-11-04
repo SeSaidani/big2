@@ -30,11 +30,11 @@
           </select>
         </label>
         <span id="record" class="record solo-only"></span>
-        <span id="who" class="record online-only"></span>
+        <span id="who" class="record"></span>
         <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
         <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
         <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
-        <button type="button" id="logoutBtn" class="ghost online-only" hidden>Log out</button>
+        <button type="button" id="logoutBtn" class="ghost" hidden>Log out</button>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
     </header>
@@ -350,40 +350,6 @@
       <div class="row">
         <button type="button" id="pwOk" class="primary">Change password</button>
         <button type="button" id="pwCancel" class="ghost">Cancel</button>
-      </div>
-    </dialog>
-
-    <dialog id="loginDlg">
-      <h2>Sign in to play online</h2>
-      <p id="loginHelp" class="muted">Accounts are created by an admin. Enter the name and password you were given.</p>
-      <div class="field">
-        <label for="loginName">Name</label><input type="text" id="loginName" autocomplete="username" maxlength="20" />
-      </div>
-      <div class="field">
-        <label for="loginPw">Password</label
-        ><input id="loginPw" type="password" autocomplete="current-password" maxlength="200" />
-      </div>
-      <div class="field" id="loginCodeField" hidden>
-        <label for="loginCode">Code from the text message</label
-        ><input
-          id="loginCode"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          placeholder="123456"
-        />
-      </div>
-      <div class="field" id="loginPhoneField" hidden>
-        <label for="loginPhone">Mobile number, with country code (only to create an account)</label
-        ><input id="loginPhone" type="tel" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
-      </div>
-      <p id="loginErr" class="bad"></p>
-      <div class="row">
-        <button type="button" id="loginBtn" class="primary">Log in</button>
-        <button type="button" id="codeBtn" hidden>Text me a code</button>
-        <button type="button" id="registerBtn">Create account</button>
-        <button type="button" id="loginCancel" class="ghost">Cancel</button>
       </div>
     </dialog>
 

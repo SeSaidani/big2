@@ -37,7 +37,6 @@ async function main() {
   await env.state.start();
   P = await newPage(CDP, 'P', OUT);
   await P.goto(BASE);
-  await P.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'page loads');
   await P.signIn('boss', PW);
 
   // ---------- seasons admin ----------

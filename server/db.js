@@ -115,6 +115,8 @@ function migrate(db) {
   addColumn(db, 'users', 'phone_verified', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(db, 'users', 'sms_enabled', 'INTEGER NOT NULL DEFAULT 1');
   addColumn(db, 'users', 'sms_blocked', 'INTEGER NOT NULL DEFAULT 0'); // the carrier says they opted out
+  // When a session began, so a renewed one can still be capped (0 = began before this column existed).
+  addColumn(db, 'sessions', 'created', 'INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone) WHERE phone IS NOT NULL');
   // 'finished' games score; 'cancelled' ones (an admin ended them) never do.
   addColumn(db, 'games', 'status', "TEXT NOT NULL DEFAULT 'finished'");

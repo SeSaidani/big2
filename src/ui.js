@@ -39,8 +39,6 @@ let lobbyGame = null; // summary of the one game, or null
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
-let registrationOpen = false;
-let codeLogin = false; // the server can text sign-in codes
 let lbKind = 'human';
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
@@ -549,19 +547,11 @@ async function enterOnline() {
   show('lobbyHome', false); // shown once we know who is signed in
   show('waitRoom', false);
   try {
-    const config = await api.config();
-    registrationOpen = config.registrationOpen;
-    codeLogin = !!config.codeLogin;
-  } catch {
-    registrationOpen = false;
-    codeLogin = false;
-  }
-  try {
     user = (await api.me()).user;
   } catch {
     user = null;
   }
-  if (!user) return openLogin('');
+  if (!user) return sessionLost();
   beginOnline();
 }
 
@@ -642,74 +632,11 @@ function closeStream() {
   eventSource = null;
 }
 
+// The server no longer knows me (expired, signed out elsewhere, account disabled): a reload
+// brings the sign-in page, since the game is only served to a signed-in user.
 function sessionLost() {
   closeStream();
-  user = null;
-  table = null;
-  show('logoutBtn', false);
-  show('passwordBtn', false);
-  show('phoneBtn', false);
-  show('adminBtn', false);
-  openLogin('Your session has ended. Please sign in again.');
-}
-
-function openLogin(message) {
-  $('loginErr').textContent = message;
-  $('loginPw').value = '';
-  $('loginCode').value = '';
-  show('loginCodeField', false);
-  show('codeBtn', codeLogin);
-  show('registerBtn', registrationOpen);
-  show('loginPhoneField', registrationOpen);
-  $('loginHelp').textContent = registrationOpen
-    ? 'Sign in, or create an account (3-20 letters, digits, _ or -; password of at least 10 characters).'
-    : codeLogin
-      ? 'Accounts are created by an admin. Enter your name and text yourself a sign-in code, or use your password.'
-      : 'Accounts are created by an admin. Enter the name and password you were given.';
-  if (!$('loginDlg').open) $('loginDlg').showModal();
-  $('loginName').focus();
-}
-
-async function submitAuth(kind) {
-  $('loginErr').textContent = '';
-  try {
-    const name = $('loginName').value.trim();
-    const code = $('loginCode').value.trim();
-    const reply =
-      kind === 'register'
-        ? await api.register(name, $('loginPw').value, $('loginPhone').value)
-        : code
-          ? await api.loginVerify(name, code)
-          : await api.login(name, $('loginPw').value);
-    user = reply.user;
-  } catch (err) {
-    $('loginErr').textContent = err.message;
-    return;
-  }
-  $('loginPw').value = '';
-  $('loginCode').value = '';
-  $('loginDlg').close();
-  beginOnline();
-}
-
-// Texts a code to the account's number. The server answers the same for any name,
-// so the message here says "if" rather than confirming anything.
-async function askForCode() {
-  $('loginErr').textContent = '';
-  const name = $('loginName').value.trim();
-  if (!name) {
-    $('loginErr').textContent = 'Enter your name first.';
-    return;
-  }
-  try {
-    await api.loginCode(name);
-  } catch (err) {
-    $('loginErr').textContent = err.message;
-    return;
-  }
-  show('loginCodeField', true);
-  $('loginErr').textContent = 'If that account exists, a code is on its way. Enter it below.';
-  $('loginCode').focus();
+  location.reload();
 }
 
 // ---- which screen is showing ----
@@ -1243,7 +1170,6 @@ async function saveSeason() {
 }
 
 function renderAdmin(o, users, entries) {
-  registrationOpen = o.registrationOpen;
   $('adminStats').textContent =
     `${o.stats.users} accounts · ${o.stats.gamesFinished} finished games · ${o.stats.gamesCancelled} cancelled · ${o.online} connected now`;
   $('regState').textContent = o.registrationOpen
@@ -1457,28 +1383,13 @@ async function submitPassword() {
 // ---- wiring ----
 $('modeSolo').addEventListener('click', () => mode !== 'solo' && enterSolo());
 $('modeOnline').addEventListener('click', () => mode !== 'online' && enterOnline());
-$('loginBtn').addEventListener('click', () => submitAuth('login'));
-$('registerBtn').addEventListener('click', () => submitAuth('register'));
-$('codeBtn').addEventListener('click', askForCode);
-$('loginCancel').addEventListener('click', () => $('loginDlg').close());
-$('loginDlg').addEventListener('close', () => {
-  if (mode === 'online' && !user) enterSolo();
-});
-for (const id of ['loginName', 'loginPw', 'loginCode']) {
-  $(id).addEventListener('keydown', (e) => e.key === 'Enter' && submitAuth('login'));
-}
 $('logoutBtn').addEventListener('click', async () => {
   try {
     await api.logout();
   } catch {
     /* already signed out */
   }
-  user = null;
-  show('logoutBtn', false);
-  show('passwordBtn', false);
-  show('phoneBtn', false);
-  show('adminBtn', false);
-  enterSolo();
+  location.reload(); // the sign-in page is all that is served now
 });
 $('adminBtn').addEventListener('click', () => {
   adminView = !adminView;
@@ -1536,6 +1447,20 @@ $('lbAi').addEventListener('click', () => {
   refreshLeaderboard();
 });
 
-renderRecord();
-if (localStorage.getItem('big2.mode') === 'online') enterOnline();
-else startGame();
+// The game is only served to a signed-in user, so this is a check that the session still holds,
+// not a login. Signed in, you land where you left off (online the first time).
+async function boot() {
+  renderRecord();
+  try {
+    user = (await api.me()).user;
+  } catch (err) {
+    if (err.status === 401) return sessionLost();
+  }
+  if (user) {
+    $('who').textContent = user.name;
+    show('logoutBtn', true);
+  }
+  if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
+  else startGame();
+}
+boot();

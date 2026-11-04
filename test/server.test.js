@@ -129,21 +129,20 @@ test('hardening: auth required, body size, content type, origin, static whitelis
       403,
     );
     assert.equal((await anon.req('POST', '/api/login', { name: 'a', password: 'b' }, { origin: base })).status, 401);
-    for (const p of [
-      '/server/db.js',
-      '/package.json',
-      '/data/big2.db',
-      '/test/server.test.js',
-      '/src/..%2fpackage.json',
-      '/src/%2e%2e/package.json',
-    ]) {
+    for (const p of ['/server/db.js', '/package.json', '/data/big2.db', '/test/server.test.js']) {
       assert.equal((await fetch(base + p)).status, 404, p);
+    }
+    // Signed in, the same traversal tricks under /src/ still find nothing.
+    const member = await makeUser({ app, base }, 'walker');
+    for (const p of ['/src/..%2fpackage.json', '/src/%2e%2e/package.json', '/src/../package.json']) {
+      const r = await fetch(base + p, { headers: { cookie: member.cookie } });
+      assert.equal(r.status, 404, p);
     }
     const page = await fetch(base + '/');
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
-    assert.equal((await fetch(base + '/src/game.js')).status, 200);
+    assert.equal((await fetch(base + '/src/game.js')).status, 401); // the game needs a sign-in (login-gate.test.js)
     const icon = await fetch(base + '/favicon.svg');
     assert.equal(icon.status, 200);
     assert.match(icon.headers.get('content-type'), /svg/);

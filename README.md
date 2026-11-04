@@ -11,11 +11,14 @@ works on Node 24, so pin your Node version when deploying).
 
 ```
 npm test                         # all tests
-npm start                        # solo only: static file server on :8765   (tools/serve.js)
-npm run online                   # the full server: solo + online          (server/index.js)
+npm start                        # the server: sign-in, solo and online   (server/index.js)
+npm run online                   # the same
 ```
 
-Open the address it prints. The online server listens on `127.0.0.1:8765` by default.
+Open the address it prints. The server listens on `127.0.0.1:8765` by default. Nothing of the game is served
+until you sign in (a visitor gets only the sign-in page), so make an account first: `npm run admin -- make-admin <name>`.
+A session lasts 30 days from its last use (using the site renews it, so regular players are not asked again),
+and never more than 180 days from the sign-in.
 
 | Environment variable | Meaning                                                            |
 | -------------------- | ------------------------------------------------------------------ |
@@ -140,12 +143,12 @@ automatically.
 ## Layout
 
 ```
-index.html, styles.css, favicon.svg, manifest.webmanifest, icon-*.png   the page and its installable-app files
+index.html, signin.html/.js, styles.css, favicon.svg, manifest.webmanifest, icon-*.png   the page and its installable-app files
 src/            cards, hands (classification and ranking), moves (legal-move generation), game (state machine),
                 scoring, ui.js (browser UI), online.js (API client), online-view.js (server view -> UI state)
 src/ai/         easy (greedy), medium (heuristic planner), hard (determinised Monte Carlo tree search), worker
 server/         index.js (HTTP, SSE, admin API), table.js, lobby.js, auth.js, db.js, hub.js, ai-pool.js, admin.js (CLI)
-tools/          serve.js (solo static server), arena.js (headless AI tournaments)
+tools/          arena.js (headless AI tournaments)
 test/           node --test suites
 ```
 

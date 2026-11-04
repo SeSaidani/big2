@@ -32,7 +32,7 @@ export default [
   },
   // The rules engine and AI run in the browser, in a worker and in Node.
   { files: ['src/**/*.js'], languageOptions: { globals: { performance: 'readonly' } } },
-  { files: ['src/ui.js', 'src/online.js'], languageOptions: { globals: globals.browser } },
+  { files: ['src/ui.js', 'src/online.js', 'signin.js'], languageOptions: { globals: globals.browser } },
   { files: ['src/ai/worker.js'], languageOptions: { globals: globals.worker } },
   {
     files: ['server/**', 'tools/**', 'test/**', 'e2e/**', 'eslint.config.js'],
