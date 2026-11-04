@@ -522,6 +522,12 @@ $('ngStart').addEventListener('click', () => {
   startGame();
 });
 $('ngCancel').addEventListener('click', () => $('newGameDlg').close());
+$('helpBtn').addEventListener('click', () => {
+  const dlg = $('helpDlg');
+  dlg.showModal();
+  dlg.scrollTop = 0; // focus lands on the Close button at the bottom, which would scroll the page down
+});
+$('helpClose').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
 // The play log can be folded away. It starts folded on a phone, where the table needs the room.
 const logPanel = document.querySelector('.log');
@@ -608,7 +614,6 @@ async function enterOnline() {
 
 function beginOnline() {
   $('who').textContent = user.name;
-  $('lobbyUser').textContent = user.name;
   show('account', true);
   show('passwordBtn', true);
   show('phoneBtn', true);

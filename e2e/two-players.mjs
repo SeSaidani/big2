@@ -55,6 +55,19 @@ async function main() {
   );
   await A.ev(`document.body.click()`);
   check('a click elsewhere closes the account menu', !(await A.ev(`document.getElementById('account').open`)));
+  await A.click('helpBtn');
+  check(
+    'the How to play dialog opens with the rules and the scoring table',
+    await A.ev(
+      `document.getElementById('helpDlg').open && document.getElementById('helpDlg').textContent.includes('Scoring') && document.querySelectorAll('#helpDlg .rates tbody tr').length === 4`,
+    ),
+  );
+  check(
+    'it opens at the top, not scrolled to the end',
+    (await A.ev(`document.getElementById('helpDlg').scrollTop`)) === 0,
+  );
+  await A.click('helpClose');
+  check('and closes again', !(await A.ev(`document.getElementById('helpDlg').open`)));
   await A.click('adminBtn');
   await A.waitFor(
     `!document.getElementById('admin').hidden && document.getElementById('usersBody').children.length >= 1`,

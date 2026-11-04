@@ -131,7 +131,9 @@ or Android device**.
 
 ## Rules in this implementation
 
-56 cards (a standard deck plus 4 wild jokers), 14 each. Ranks 3 < … < K < A < 2; suits ♦ < ♣ < ♥ < ♠. The 3♦ opens.
+56 cards (a standard deck plus 4 wild jokers), 14 each at a table of four. At a table of three it is 18 each, and the two
+spare cards go to the holders of the 3♦ and the 2♠ (the scoring bands stretch in proportion; see `src/scoring.js`).
+Ranks 3 < … < K < A < 2; suits ♦ < ♣ < ♥ < ♠. The 3♦ opens.
 Singles, pairs, triples and five-card hands (straight, flush, full house, four of a kind + kicker, straight flush,
 five of a kind). A straight is worth its highest card; ace and 2 are low in A-2-3-4-5 and 2-3-4-5-6, the two weakest
 straights. You can pass even with the lead. If the next player has one card left, a single must be your highest. A

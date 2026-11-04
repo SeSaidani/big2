@@ -132,6 +132,54 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+/* The How to play dialog: a long page that scrolls inside the dialog. */
+.help {
+  width: min(680px, calc(100% - 24px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.help h2 {
+  margin-top: 0;
+  color: var(--accent);
+}
+
+.help h3 {
+  margin: 18px 0 6px;
+  font-size: 1rem;
+}
+
+.help p,
+.help li {
+  line-height: 1.45;
+}
+
+.help ul {
+  padding-left: 20px;
+}
+
+.rates {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+}
+
+.rates th,
+.rates td {
+  padding: 5px 10px;
+  text-align: left;
+  border-bottom: 1px solid #1f5a40;
+}
+
+.help-btn {
+  width: 36px;
+  height: 36px;
+  margin-left: 10px;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
 /* The current online game in the lobby: a short list of facts. */
 .facts {
   display: grid;
@@ -1208,9 +1256,14 @@ button.ghost.active {
   }
 
   /* Logo and account share the first row; the mode and game controls take the second. */
-  .account {
+  .help-btn {
     order: 2;
     margin-left: auto;
+  }
+
+  .account {
+    order: 2;
+    margin-left: 6px;
   }
 
   .topbar h1 svg {

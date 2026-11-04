@@ -167,7 +167,7 @@ async function main() {
   check('a wrong code is refused', true, await A.text('err'));
   await A.ev(`document.getElementById('code').value='${signIn}'; document.getElementById('loginBtn').click()`);
   await A.waitFor(
-    `document.getElementById('lobbyUser').textContent==='dana' && !document.getElementById('lobbyHome').hidden`,
+    `document.getElementById('who').textContent==='dana' && !document.getElementById('lobbyHome').hidden`,
     10000,
     'dana signed in by code',
   );
