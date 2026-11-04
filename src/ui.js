@@ -40,6 +40,7 @@ let viewingLobby = false; // seated, but looking at the lobby instead of the tab
 let adminView = false;
 let chatMsgs = [];
 let registrationOpen = false;
+let codeLogin = false; // the server can text sign-in codes
 let lbKind = 'human';
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
@@ -548,9 +549,12 @@ async function enterOnline() {
   show('lobbyHome', false); // shown once we know who is signed in
   show('waitRoom', false);
   try {
-    registrationOpen = (await api.config()).registrationOpen;
+    const config = await api.config();
+    registrationOpen = config.registrationOpen;
+    codeLogin = !!config.codeLogin;
   } catch {
     registrationOpen = false;
+    codeLogin = false;
   }
   try {
     user = (await api.me()).user;
@@ -652,11 +656,16 @@ function sessionLost() {
 function openLogin(message) {
   $('loginErr').textContent = message;
   $('loginPw').value = '';
+  $('loginCode').value = '';
+  show('loginCodeField', false);
+  show('codeBtn', codeLogin);
   show('registerBtn', registrationOpen);
   show('loginPhoneField', registrationOpen);
   $('loginHelp').textContent = registrationOpen
     ? 'Sign in, or create an account (3-20 letters, digits, _ or -; password of at least 10 characters).'
-    : 'Accounts are created by an admin. Enter the name and password you were given.';
+    : codeLogin
+      ? 'Accounts are created by an admin. Enter your name and text yourself a sign-in code, or use your password.'
+      : 'Accounts are created by an admin. Enter the name and password you were given.';
   if (!$('loginDlg').open) $('loginDlg').showModal();
   $('loginName').focus();
 }
@@ -665,18 +674,42 @@ async function submitAuth(kind) {
   $('loginErr').textContent = '';
   try {
     const name = $('loginName').value.trim();
+    const code = $('loginCode').value.trim();
     const reply =
       kind === 'register'
         ? await api.register(name, $('loginPw').value, $('loginPhone').value)
-        : await api.login(name, $('loginPw').value);
+        : code
+          ? await api.loginVerify(name, code)
+          : await api.login(name, $('loginPw').value);
     user = reply.user;
   } catch (err) {
     $('loginErr').textContent = err.message;
     return;
   }
   $('loginPw').value = '';
+  $('loginCode').value = '';
   $('loginDlg').close();
   beginOnline();
+}
+
+// Texts a code to the account's number. The server answers the same for any name,
+// so the message here says "if" rather than confirming anything.
+async function askForCode() {
+  $('loginErr').textContent = '';
+  const name = $('loginName').value.trim();
+  if (!name) {
+    $('loginErr').textContent = 'Enter your name first.';
+    return;
+  }
+  try {
+    await api.loginCode(name);
+  } catch (err) {
+    $('loginErr').textContent = err.message;
+    return;
+  }
+  show('loginCodeField', true);
+  $('loginErr').textContent = 'If that account exists, a code is on its way. Enter it below.';
+  $('loginCode').focus();
 }
 
 // ---- which screen is showing ----
@@ -1426,11 +1459,12 @@ $('modeSolo').addEventListener('click', () => mode !== 'solo' && enterSolo());
 $('modeOnline').addEventListener('click', () => mode !== 'online' && enterOnline());
 $('loginBtn').addEventListener('click', () => submitAuth('login'));
 $('registerBtn').addEventListener('click', () => submitAuth('register'));
+$('codeBtn').addEventListener('click', askForCode);
 $('loginCancel').addEventListener('click', () => $('loginDlg').close());
 $('loginDlg').addEventListener('close', () => {
   if (mode === 'online' && !user) enterSolo();
 });
-for (const id of ['loginName', 'loginPw']) {
+for (const id of ['loginName', 'loginPw', 'loginCode']) {
   $(id).addEventListener('keydown', (e) => e.key === 'Enter' && submitAuth('login'));
 }
 $('logoutBtn').addEventListener('click', async () => {

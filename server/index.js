@@ -37,7 +37,17 @@ import { Lobby } from './lobby.js';
 import { createPool } from './ai-pool.js';
 import { secureRng } from './table.js';
 import { normalizePhone, maskPhone } from './phone-format.js';
-import { accountPhone, setUserPhone, setSmsEnabled, createCode, dropCode, checkCode, logSms } from './phones.js';
+import {
+  accountPhone,
+  setUserPhone,
+  setSmsEnabled,
+  textingRow,
+  createCode,
+  dropCode,
+  checkCode,
+  logSms,
+} from './phones.js';
+import { createLoginCode, dropLoginCode, checkLoginCode } from './login-codes.js';
 import { TurnNotifier } from './notify.js';
 import { isMain } from './main-module.js';
 import { createSmsProvider, smsConfigFromEnv } from './sms/index.js';
@@ -156,6 +166,9 @@ export function createApp(opts = {}) {
   hub.onPresence = (userId) => lobby.presence(userId); // the hub and the lobby need each other
   lobby.restore();
   const loginLimit = new auth.RateLimiter(10, 15 * 60 * 1000);
+  // Sign-in texts: per name (counted whether or not the name exists, so the limit tells nothing) and per IP.
+  const codeNameLimit = new auth.RateLimiter(3, 3600 * 1000);
+  const codeIpLimit = new auth.RateLimiter(20, 3600 * 1000);
   const registerLimit = new auth.RateLimiter(10, 3600 * 1000);
 
   auth.purgeSessions(db);
@@ -268,6 +281,29 @@ export function createApp(opts = {}) {
       log(`verification text to ${maskPhone(phone)} failed: ${err.message}`);
       throw new HttpError(502, 'We could not send the text message. Check the number and try again later.');
     }
+  }
+
+  // Texts a sign-in code to the account's number. Not awaited by the caller: a slow
+  // provider would otherwise make "this account exists" visible in the response time.
+  function sendLoginCode(userId) {
+    const row = textingRow(db, userId);
+    if (!row || !row.phone || row.blocked) return;
+    const code = createLoginCode(db, userId, cfg.now());
+    const note = (ok) => {
+      try {
+        logSms(db, userId, 'login', ok, cfg.now());
+        if (!ok) dropLoginCode(db, userId);
+      } catch {
+        /* the database closed while a send was in flight */
+      }
+    };
+    smsProvider
+      .send({ to: row.phone, body: `Big Two sign-in code: ${code}. It expires in 10 minutes. Do not share it.` })
+      .then(() => note(true))
+      .catch((err) => {
+        note(false);
+        log(`sign-in text to ${maskPhone(row.phone)} failed: ${err.message}`);
+      });
   }
 
   const gameReply = (res, user, status = 200) => {
@@ -388,7 +424,9 @@ export function createApp(opts = {}) {
     const m = req.method;
     if (m === 'POST') checkOrigin(req);
 
-    if (p === '/api/config' && m === 'GET') return sendJson(res, 200, { registrationOpen: registrationOpen() });
+    if (p === '/api/config' && m === 'GET') {
+      return sendJson(res, 200, { registrationOpen: registrationOpen(), codeLogin: smsProvider.canSend });
+    }
     if (p === '/api/register' && m === 'POST') {
       if (!registrationOpen()) throw new HttpError(403, 'Registration is closed. Ask an admin for an account.');
       const ip = clientIp(req);
@@ -413,6 +451,42 @@ export function createApp(opts = {}) {
         if (err instanceof auth.AuthError && err.status === 401) keys.forEach((k) => loginLimit.record(k));
         throw err;
       }
+    }
+    // Sign in by texted code. Step 1 always answers the same, whoever the name is.
+    if (p === '/api/login/code' && m === 'POST') {
+      if (!smsProvider.canSend) throw new HttpError(409, 'Signing in by text message is not switched on.');
+      const body = await readJson(req);
+      const name = typeof body.name === 'string' ? body.name.slice(0, 64) : '';
+      const ipKey = clientIp(req);
+      const nameKey = name.toLowerCase();
+      if (!codeIpLimit.allowed(ipKey) || !codeNameLimit.allowed(nameKey)) {
+        throw new HttpError(429, 'Too many codes requested. Try again in an hour.');
+      }
+      codeIpLimit.record(ipKey);
+      codeNameLimit.record(nameKey);
+      const row = db.prepare('SELECT id, disabled FROM users WHERE name = ?').get(name);
+      if (row && !row.disabled) sendLoginCode(row.id);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (p === '/api/login/verify' && m === 'POST') {
+      const body = await readJson(req);
+      const keys = [`ip:${clientIp(req)}`, `name:${String(body.name).toLowerCase()}`];
+      if (!keys.every((k) => loginLimit.allowed(k))) {
+        throw new HttpError(429, 'Too many failed logins. Try again later.');
+      }
+      const row =
+        typeof body.name === 'string'
+          ? db.prepare('SELECT id, name, is_admin AS isAdmin, disabled FROM users WHERE name = ?').get(body.name)
+          : undefined;
+      if (!row || !checkLoginCode(db, row.id, body.code, cfg.now())) {
+        keys.forEach((k) => loginLimit.record(k));
+        throw new HttpError(401, 'That code is wrong or has expired. Ask for a new one.');
+      }
+      // Only someone who holds a valid code learns the account is disabled.
+      if (row.disabled) throw new HttpError(403, 'This account has been disabled. Ask an admin.');
+      // The code reached the number on file, so that number is proven.
+      db.prepare('UPDATE users SET phone_verified = 1, last_login = ? WHERE id = ?').run(cfg.now(), row.id);
+      return startSession(res, { id: row.id, name: row.name, isAdmin: !!row.isAdmin }, 200);
     }
     if (p === '/api/logout' && m === 'POST') {
       auth.deleteSession(db, sessionToken(req));

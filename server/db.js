@@ -69,6 +69,15 @@ CREATE TABLE IF NOT EXISTS phone_codes (
   expires INTEGER NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0
 );
+-- One pending sign-in code per user (hashed; short-lived). Kept apart from
+-- phone_codes: that one proves a number, this one opens a session.
+CREATE TABLE IF NOT EXISTS login_codes (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  salt TEXT NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
 -- Every text we try to send (never its content or the number): drives the
 -- per-user cooldown and daily cap, and gives an audit trail of volume.
 CREATE TABLE IF NOT EXISTS sms_log (

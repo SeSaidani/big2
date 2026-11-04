@@ -26,6 +26,7 @@ export function setUserPhone(db, userId, phone, { verified = false } = {}) {
     throw err;
   }
   db.prepare('DELETE FROM phone_codes WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM login_codes WHERE user_id = ?').run(userId); // a code texted to the old number is void
 }
 
 // What the user themselves may see about their phone, and what they still have to do.

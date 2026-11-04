@@ -150,6 +150,32 @@ async function main() {
   await A.waitFor(`document.getElementById('loginDlg').open`, 8000, 'login dialog');
   check('the sign-in dialog asks for a number when sign-up is open', await A.visible('loginPhoneField'));
   await A.shot('4-register-with-phone');
+
+  // Signing in by texted code: dana asks for one, a wrong code is refused, the right one signs her in.
+  check('the sign-in dialog offers a texted code', await A.visible('codeBtn'));
+  check('the code box waits until a code is asked for', !(await A.visible('loginCodeField')));
+  await A.ev(`document.getElementById('loginName').value='dana'; document.getElementById('codeBtn').click()`);
+  await A.waitFor(`!document.getElementById('loginCodeField').hidden`, 8000, 'the code box');
+  const signInCode = () => {
+    const all = [...env.state.out.matchAll(/Big Two sign-in code: (\d{6})/g)];
+    return all.length ? all[all.length - 1][1] : null;
+  };
+  for (let i = 0; i < 100 && !signInCode(); i++) await new Promise((r) => setTimeout(r, 50));
+  const signIn = signInCode();
+  check('a sign-in code was texted', !!signIn);
+  check('the message does not confirm the account exists', (await A.text('loginErr')).startsWith('If that account'));
+  const wrong = signIn === '000000' ? '111111' : '000000';
+  await A.ev(`document.getElementById('loginCode').value='${wrong}'; document.getElementById('loginBtn').click()`);
+  await A.waitFor(`document.getElementById('loginErr').textContent.includes('wrong or has expired')`, 8000, 'refusal');
+  check('a wrong code is refused', true, await A.text('loginErr'));
+  await A.ev(`document.getElementById('loginCode').value='${signIn}'; document.getElementById('loginBtn').click()`);
+  await A.waitFor(
+    `document.getElementById('lobbyUser').textContent==='dana' && !document.getElementById('lobbyHome').hidden`,
+    10000,
+    'dana signed in by code',
+  );
+  check('the right code signs her in, with no password typed', true);
+  await A.shot('5-signed-in-by-code');
 }
 
 let failed = false;

@@ -5,6 +5,7 @@
 //   node server/admin.js make-admin <name>        create the user, or promote an existing one
 //   node server/admin.js reset-password <name>
 //   node server/admin.js set-phone <name>
+//   node server/admin.js login-code <name>        print a one-time sign-in code (the way in when texts do not arrive)
 //   node server/admin.js list-users
 //
 // The password is asked for with hidden input, or taken from BIG2_PASSWORD
@@ -20,6 +21,7 @@ import { openDb, listUsers, audit } from './db.js';
 import { createUser, setPassword, validatePassword } from './auth.js';
 import { normalizePhone } from './phone-format.js';
 import { setUserPhone } from './phones.js';
+import { createLoginCode } from './login-codes.js';
 import { isMain } from './main-module.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,6 +56,17 @@ export function setPhone(db, name, phone) {
   if (!row) throw new Error(`No such user: ${name}`);
   setUserPhone(db, row.id, normalizePhone(phone), { verified: true });
   audit(db, null, 'cli_set_phone', name); // never the number
+}
+
+// A sign-in code, shown here instead of texted: for when texts are down. Whoever can
+// run this already owns the database, and it is in the audit log.
+export function issueLoginCode(db, name) {
+  const row = db.prepare('SELECT id, disabled FROM users WHERE name = ?').get(name);
+  if (!row) throw new Error(`No such user: ${name}`);
+  if (row.disabled) throw new Error(`"${name}" is disabled.`);
+  const code = createLoginCode(db, row.id);
+  audit(db, null, 'cli_login_code', name); // never the code
+  return code;
 }
 
 function readSecret(question) {
@@ -124,9 +137,11 @@ async function main(argv) {
     } else if (cmd === 'set-phone' && name) {
       setPhone(db, name, await askPhone());
       console.log(`Phone number set for "${name}" (marked verified).`);
+    } else if (cmd === 'login-code' && name) {
+      console.log(`Sign-in code for "${name}" (10 minutes, one use): ${issueLoginCode(db, name)}`);
     } else {
       console.log(
-        'Usage: node server/admin.js make-admin <name> | reset-password <name> | set-phone <name> | list-users',
+        'Usage: node server/admin.js make-admin <name> | reset-password <name> | set-phone <name> | login-code <name> | list-users',
       );
       process.exitCode = 1;
     }

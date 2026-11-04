@@ -35,6 +35,9 @@ export const api = {
   resendCode: () => call('POST', '/api/phone/resend'),
   setSms: (enabled) => call('POST', '/api/sms', { enabled }),
   login: (name, password) => call('POST', '/api/login', { name, password }),
+  // Sign in by texted code: ask for one (the reply is the same for any name), then log in with it.
+  loginCode: (name) => call('POST', '/api/login/code', { name }),
+  loginVerify: (name, code) => call('POST', '/api/login/verify', { name, code }),
   logout: () => call('POST', '/api/logout', {}),
   changePassword: (current, next) => call('POST', '/api/password', { current, next }),
   // season: 'current' | 'all' | a season id; sort: 'points' | 'perGame'

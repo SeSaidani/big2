@@ -33,6 +33,7 @@ There is no sign-up by default. The first admin is created from a shell on the m
 node server/admin.js make-admin <name>          # asks for a password (hidden) and a mobile number
 node server/admin.js reset-password <name>
 node server/admin.js set-phone <name>
+node server/admin.js login-code <name>          # prints a one-time sign-in code, for when texts do not arrive
 node server/admin.js list-users
 ```
 
@@ -42,6 +43,13 @@ accounts, promote or demote admins, open or close self-registration, cancel the 
 Every admin action is re-checked on the server and recorded. The last active admin cannot be removed or disabled.
 Users change their own password with the **Password** button. There is no email, so a lost password is reset by an
 admin.
+
+**Signing in by text message.** When a text provider is configured (`SMS_PROVIDER` other than `none`), the sign-in
+dialog has **Text me a code**: enter your name, and a 6-digit code goes to the number on file. The code is stored
+hashed, lasts 10 minutes, allows 5 tries and works once; a new one replaces the old. Asking for a code answers the same
+for any name, so names cannot be probed, and costs at most 3 texts an hour per name and 20 an hour per address. Texts
+only ever go to numbers already on file. A correct code also proves the number. SMS is a weak factor (SIM swaps,
+interception), which is acceptable for a card game; if texts are down, `login-code` above is the way in.
 
 ## Phone numbers and text messages
 

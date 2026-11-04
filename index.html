@@ -363,6 +363,17 @@
         <label for="loginPw">Password</label
         ><input id="loginPw" type="password" autocomplete="current-password" maxlength="200" />
       </div>
+      <div class="field" id="loginCodeField" hidden>
+        <label for="loginCode">Code from the text message</label
+        ><input
+          id="loginCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          placeholder="123456"
+        />
+      </div>
       <div class="field" id="loginPhoneField" hidden>
         <label for="loginPhone">Mobile number, with country code (only to create an account)</label
         ><input id="loginPhone" type="tel" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
@@ -370,6 +381,7 @@
       <p id="loginErr" class="bad"></p>
       <div class="row">
         <button type="button" id="loginBtn" class="primary">Log in</button>
+        <button type="button" id="codeBtn" hidden>Text me a code</button>
         <button type="button" id="registerBtn">Create account</button>
         <button type="button" id="loginCancel" class="ghost">Cancel</button>
       </div>
