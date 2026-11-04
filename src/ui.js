@@ -1,17 +1,8 @@
 // Browser front end: rendering, input, and turn sequencing. All rules live
 // in game.js; AI decisions run in a Web Worker and only see observe() views.
 
-import {
-  RANK_NAMES,
-  SUIT_NAMES,
-  isJoker,
-  rankOf,
-  suitOf,
-  isRedSuit,
-  cardName,
-  sortByRank,
-  sortBySuit,
-} from './cards.js';
+import { isJoker, suitOf, isRedSuit, cardName, sortByRank, sortBySuit } from './cards.js';
+import { cardSVG } from './card-art.js';
 import { classify, describe } from './hands.js';
 import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip } from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
@@ -103,15 +94,12 @@ function cardEl(c, mini = false) {
   if (isJoker(c)) {
     el.classList.add('joker');
     if (c >= 54) el.classList.add('red');
-    el.innerHTML = '<span class="star">★</span><span class="pip">JOKER</span>';
     el.title = 'Joker (wild)';
   } else {
-    const r = RANK_NAMES[rankOf(c)];
-    const s = SUIT_NAMES[suitOf(c)];
     if (isRedSuit(suitOf(c))) el.classList.add('red');
-    el.innerHTML = `<span class="corner">${r}<br>${s}</span><span class="pip">${s}</span><span class="corner br">${r}<br>${s}</span>`;
     el.title = cardName(c);
   }
+  el.innerHTML = cardSVG(c, mini);
   return el;
 }
 
