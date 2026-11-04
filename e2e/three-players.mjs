@@ -69,7 +69,6 @@ async function main() {
   await A.shot('2-solo-result');
 
   // --- online, three seats, two computer seats ---
-  await A.ev(`(document.getElementById('endLeave') || document.getElementById('againBtn')).click()`).catch(() => {});
   await A.click('modeOnline');
   await A.waitFor(`!document.getElementById('createRow').hidden`, 10000, 'create row');
   await A.ev(
