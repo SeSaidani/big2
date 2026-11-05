@@ -245,6 +245,18 @@ async function main() {
   await P.ev(`document.getElementById('clearBtn').click()`);
   check('Clear empties the selection', (await selCount()) === 0);
 
+  // A selected card is lifted but must not cover the cards beside it: you need to see what is next to it.
+  await P.ev(`(() => { ${HELPERS} pick(6); })()`);
+  const beside = await P.ev(
+    `(() => { ${HELPERS} const l = slice(5); const r = slice(7); return [l && Math.round(l.width), r && Math.round(r.width)]; })()`,
+  );
+  check(
+    'a selected card does not hide the cards beside it',
+    beside.every((w) => w !== null && w >= 18),
+    beside.join(','),
+  );
+  await P.ev(`document.getElementById('clearBtn').click()`);
+
   const coveredP = await P.ev(
     `[...document.querySelectorAll('.actions button')].filter(b => b.offsetParent).filter(b => { const r = b.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !(t && t.closest('button') === b); }).map(b => b.textContent)`,
   );

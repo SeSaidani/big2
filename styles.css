@@ -613,13 +613,13 @@ button.ghost {
   }
 }
 
-/* A selected card is clearly lifted out of the hand, in front of its
-   neighbours, with a glow: about a third of the card's height on desktop. */
+/* A selected card is lifted out of the hand with a glow: about a third of the card's height on
+   desktop. It keeps its place in the stacking order (and its size): the card to its right stays in
+   front of it, as in a held fan. Raising it above its neighbours, or enlarging it, covered the
+   rank and suit of the next card, so you could not see what you were picking next to it. */
 .hand .card.selected {
   --lift: -34px;
-  --s: 1.06;
 
-  z-index: 20;
   box-shadow:
     0 0 0 3px var(--accent),
     0 0 18px 4px rgb(242 193 78 / 60%),
