@@ -31,6 +31,7 @@ import {
   updateSeason,
   deleteSeason,
 } from './db.js';
+import { luckAndSkill } from './stats.js';
 import * as auth from './auth.js';
 import { Hub } from './hub.js';
 import { Lobby } from './lobby.js';
@@ -519,6 +520,12 @@ export function createApp(opts = {}) {
       if (!/^(current|all|\d+)$/.test(season)) throw new HttpError(400, 'season must be current, all or a season id.');
       const sort = url.searchParams.get('sort') === 'perGame' ? 'perGame' : 'points';
       return sendJson(res, 200, { kind, sort, ...leaderboard(db, kind, { season, sort, now: cfg.now() }) });
+    }
+    if (p === '/api/stats' && m === 'GET') {
+      const kind = url.searchParams.get('kind') === 'ai' ? 'ai' : 'human';
+      const season = url.searchParams.get('season') || 'current';
+      if (!/^(current|all|\d+)$/.test(season)) throw new HttpError(400, 'season must be current, all or a season id.');
+      return sendJson(res, 200, { kind, ...luckAndSkill(db, kind, { season, now: cfg.now(), log }) });
     }
     if (p === '/api/seasons' && m === 'GET') return sendJson(res, 200, { seasons: listSeasons(db, cfg.now()) });
     if (p.startsWith('/api/admin/')) return adminApi(req, res, url);

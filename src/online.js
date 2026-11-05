@@ -46,6 +46,9 @@ export const api = {
       'GET',
       `/api/leaderboard?kind=${kind === 'ai' ? 'ai' : 'human'}&season=${encodeURIComponent(season)}&sort=${sort === 'perGame' ? 'perGame' : 'points'}`,
     ),
+  // luck and play against what the dealt cards were worth (same kind and season as the leaderboard)
+  stats: (kind, season = 'current') =>
+    call('GET', `/api/stats?kind=${kind === 'ai' ? 'ai' : 'human'}&season=${encodeURIComponent(season)}`),
   seasons: () => call('GET', '/api/seasons'),
   game: () => call('GET', '/api/game'),
   // The one game

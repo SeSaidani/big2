@@ -105,6 +105,16 @@ CREATE TABLE IF NOT EXISTS game_moves (
   auto INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (game_id, ply)
 );
+-- What the deal model (docs/deal-model.md) says each seat's cards were worth, per game: a win chance and
+-- expected points. "model" fingerprints the model file, so a refit recomputes instead of mixing versions.
+CREATE TABLE IF NOT EXISTS game_expectation (
+  game_id INTEGER NOT NULL REFERENCES games(id),
+  seat INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  win_p REAL NOT NULL,
+  exp_points REAL NOT NULL,
+  PRIMARY KEY (game_id, seat, model)
+);
 -- The one live table (waiting, playing or just finished), so a game survives
 -- a server restart. At most one row.
 CREATE TABLE IF NOT EXISTS live_game (
