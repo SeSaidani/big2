@@ -1,7 +1,7 @@
 # Big Two (Hong Kong rules) with four wild jokers
 
-A browser game. Play **solo** against three computer players (Easy, Medium, Hard), or **online**: accounts, one
-shared game at a time, chat, points and leaderboards. No runtime dependencies beyond Node itself (the packages in
+A browser game. Play **solo** against computer players (Easy, Medium, Hard) any time, for practice and not scored, or
+**online**: season games between four people, with accounts, one shared game at a time, chat, points and leaderboards. No runtime dependencies beyond Node itself (the packages in
 `package.json` are development tools only).
 
 Needs **Node 22.13 or later** (the server uses the built-in `node:sqlite`, still marked experimental upstream; it
@@ -20,13 +20,14 @@ until you sign in (a visitor gets only the sign-in page), so make an account fir
 A session lasts 30 days from its last use (using the site renews it, so regular players are not asked again),
 and never more than 180 days from the sign-in.
 
-| Environment variable | Meaning                                                            |
-| -------------------- | ------------------------------------------------------------------ |
-| `PORT`, `HOST`       | Where to listen. `HOST=0.0.0.0` exposes it on the network.         |
-| `DB_FILE`            | SQLite file (default `data/big2.db`).                              |
-| `AI_DELAY_MS`        | Pause before each computer move (default 700).                     |
-| `TRUST_PROXY=1`      | Behind a reverse proxy: take the client IP from `X-Forwarded-For`. |
-| `SECURE_COOKIES=1`   | Mark the session cookie `Secure` (use once served over HTTPS).     |
+| Environment variable | Meaning                                                              |
+| -------------------- | -------------------------------------------------------------------- |
+| `PORT`, `HOST`       | Where to listen. `HOST=0.0.0.0` exposes it on the network.           |
+| `DB_FILE`            | SQLite file (default `data/big2.db`).                                |
+| `AI_DELAY_MS`        | Pause before each computer move (default 700).                       |
+| `DEV_TABLES=1`       | Development and tests only: computer seats and 3-seat online tables. |
+| `TRUST_PROXY=1`      | Behind a reverse proxy: take the client IP from `X-Forwarded-For`.   |
+| `SECURE_COOKIES=1`   | Mark the session cookie `Secure` (use once served over HTTPS).       |
 
 ## Accounts and admin
 
@@ -97,8 +98,10 @@ prints verification codes: never use it in production.
 
 ## How online games work
 
-- **One game at a time**, created by an admin. Anyone signed in can join it while it is waiting; the host starts it.
-  Empty seats are played by the computer at the level the admin chose.
+- **One game at a time**, created by an admin, and only while a season is running. It is a **season game**: four people,
+  no computer players. Anyone signed in can join it while it is waiting; the host can start it once all four seats have a
+  person. (For computer players, play solo. `DEV_TABLES=1` turns computer seats and 3-seat tables back on for development
+  and tests; production never sets it.)
 - A started game **holds its seats until it finishes or an admin cancels it**. There is no turn timer; the game waits
   for anyone who is offline. "Back to lobby" keeps your seat. The live game is saved to SQLite after every change, so
   it **survives a server restart**.
@@ -109,7 +112,7 @@ prints verification codes: never use it in production.
   to zero. These thresholds are an adaptation of the 13-card scale to 14-card hands, not a published rule: change
   `RATES`.
 - **Leaderboards are cumulative:** running total points, with games, wins, win % and points per game beside them, and a
-  toggle to rank by per-game instead of total. Games with computer players are scored on their own board.
+  toggle to rank by per-game instead of total. Only online season games count; solo games are not scored.
 - **Seasons** are date ranges set by an admin (Admin > Seasons): a name, a start and an optional end, in the admin's local
   time (stored as UTC). A game counts in the season in which it **finished** (`starts <= finished < ends`). Seasons
   cannot overlap; gaps are allowed, and games in a gap count only in **All-time**. Boards can be viewed for the current

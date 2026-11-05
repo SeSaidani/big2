@@ -8,7 +8,7 @@ const ADMIN_PW = 'admin-password-123';
 const TEMP_PW = 'temporary-pass-1';
 const NEW_PW = 'alice-new-password-9';
 
-const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e2-' });
+const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e2-', extraEnv: { DEV_TABLES: '1' } });
 console.log('CLI:', env.makeAdmin('boss', ADMIN_PW).stdout.trim());
 
 let moves = 0;

@@ -14,6 +14,7 @@ for (const script of [
   'phone-verification.mjs',
   'three-players.mjs',
   'luck-and-skill.mjs',
+  'season-games.mjs',
 ]) {
   console.log(`\n=== ${script} ===`);
   const r = spawnSync(process.execPath, [path.join(here, script), ...process.argv.slice(2)], { stdio: 'inherit' });

@@ -15,7 +15,7 @@ const check = (label, ok, extra = '') => {
   if (!ok) throw new Error('check failed: ' + label);
 };
 
-const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e3-' });
+const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e3-', extraEnv: { DEV_TABLES: '1' } });
 // Games are seeded before the server starts. Only games with no computer players count, so these are human
 // games (boss wins 30, then loses 12: 18 in total), plus one game with computers that must not count (boss +50).
 async function seedGames() {

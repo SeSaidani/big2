@@ -154,14 +154,14 @@
             <h2>Play online</h2>
             <div id="gameBox"></div>
             <div class="row" id="createRow" hidden>
-              <label
+              <label class="dev-only" hidden
                 >Players
                 <select id="newSeats">
                   <option value="4" selected>4</option>
                   <option value="3">3</option>
                 </select>
               </label>
-              <label
+              <label class="dev-only" hidden
                 >AI level
                 <select id="newLevel">
                   <option value="easy">Easy</option>
@@ -170,6 +170,7 @@
                 </select>
               </label>
               <button type="button" id="createBtn" class="primary">Create game</button>
+              <span class="muted">A season game seats 4 people and starts when all four have joined.</span>
             </div>
             <p id="lobbyMsg" class="bad"></p>
           </section>
@@ -205,8 +206,8 @@
                 <tbody id="lbBody"></tbody>
               </table>
               <p class="muted">
-                Points are running totals (what you have won minus what you have paid). Only games with no computer
-                players count.
+                Points are running totals (what you have won minus what you have paid). Only online season games count;
+                solo games are not scored.
               </p>
             </div>
             <div id="lsBox" hidden>
@@ -457,8 +458,8 @@
       <h3>The cards</h3>
       <p>
         56 cards: a standard deck plus 4 wild jokers. Ranks run 3 (lowest) up to K, A and 2 (highest). Suits run ♦ &lt;
-        ♣ &lt; ♥ &lt; ♠. With 4 players everyone gets 14 cards. With 3 players everyone gets 18, and the 2 spare cards
-        go to whoever holds the 3♦ and whoever holds the 2♠ (so they start with 19, or one player with 20).
+        ♣ &lt; ♥ &lt; ♠. With 4 players everyone gets 14 cards. With 3 players (solo only) everyone gets 18, and the 2
+        spare cards go to whoever holds the 3♦ and whoever holds the 2♠ (so they start with 19, or one player with 20).
       </p>
       <h3>Playing</h3>
       <ul>
@@ -527,15 +528,17 @@
       </p>
       <h3>Solo</h3>
       <p>
-        Play against the computer. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The settings are
-        fixed for the whole game.
+        Play against the computer, any time. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The
+        settings are fixed for the whole game. Solo games are for practice: they are not scored on the leaderboard.
       </p>
       <h3>Online</h3>
       <ul>
-        <li>One game runs at a time. An admin creates it, and only an admin can cancel it.</li>
         <li>
-          Seats nobody takes are played by the computer at the level the admin chose. A game with computer players is
-          just for fun: it does not count on the leaderboard.
+          One game runs at a time. An admin creates it, while a season is running, and only an admin can cancel it.
+        </li>
+        <li>
+          A season game needs 4 people. It starts when every seat is taken by a person: there are no computer players
+          online. For those, play Solo.
         </li>
         <li>
           Leaving to the lobby keeps your seat. Nobody is timed out: if a player is away, the game waits for them.
@@ -545,7 +548,7 @@
           Where the server has texting switched on, you get a text when it is your turn, to the mobile number on your
           account.
         </li>
-        <li>The leaderboard adds up points over a season. Only games with no computer players count towards it.</li>
+        <li>The leaderboard adds up points over a season. Only online season games count towards it.</li>
       </ul>
       <div class="row">
         <button type="button" id="helpClose" class="primary">Close</button>

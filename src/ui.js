@@ -49,6 +49,7 @@ let chatMsgs = [];
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
 let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
+let devTables = false; // the server's development switch (computer seats and 3-seat tables online); off in production
 let editingSeason = null;
 
 // ---------- AI worker ----------
@@ -779,13 +780,17 @@ function renderLobbyHome() {
     ['Host', g.host],
     ['Status', state],
     ['Table', `${g.seats} seats`],
-    ['Players', g.players.length ? g.players.join(', ') : 'nobody yet'],
-    [
-      'Computer',
-      empty > 0
-        ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}, so this game will not count on the leaderboard`
-        : 'no computer players',
-    ],
+    ['Players', `${g.players.length ? g.players.join(', ') : 'nobody yet'} (${g.humans} of ${g.seats})`],
+    ...(devTables
+      ? [
+          [
+            'Computer',
+            empty > 0
+              ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}, so this game will not count on the leaderboard`
+              : 'no computer players',
+          ],
+        ]
+      : []),
   ]) {
     const dt = document.createElement('dt');
     dt.textContent = label;
@@ -818,22 +823,33 @@ function renderLobbyHome() {
 }
 
 function renderWaitRoom(t) {
-  $('waitInfo').textContent =
-    `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI, and a game with computer players does not count on the leaderboard.`;
+  const needed = t.seats.filter((s) => s.kind === 'empty').length;
+  $('waitInfo').textContent = devTables
+    ? `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI, and a game with computer players does not count on the leaderboard.`
+    : `Host: ${t.host}. This is a season game: it starts when all ${t.seats.length} seats are taken by people, with no computer players.`;
   const ul = $('waitSeats');
   ul.innerHTML = '';
   t.seats.forEach((s, i) => {
     const li = document.createElement('li');
     const empty = s.kind === 'empty';
     li.textContent = empty
-      ? `Seat ${i + 1}: empty (${t.aiLevel} AI will play)`
+      ? `Seat ${i + 1}: ${devTables ? `empty (${t.aiLevel} AI will play)` : 'waiting for a player'}`
       : `Seat ${i + 1}: ${s.name}${i === t.you ? ' (you)' : ''}`;
     if (empty) li.className = 'muted';
     ul.appendChild(li);
   });
   show('startBtn', t.isHost);
+  $('startBtn').disabled = !devTables && needed > 0; // every seat needs a person
   if (!$('waitMsg').textContent || $('waitMsg').className === 'muted') {
-    $('waitMsg').textContent = t.isHost ? '' : 'Waiting for the host to start.';
+    const more = `${needed} more ${needed === 1 ? 'player' : 'players'}`;
+    $('waitMsg').textContent =
+      !devTables && needed > 0
+        ? t.isHost
+          ? `Waiting for ${more} before you can start.`
+          : `Waiting for ${more} to join.`
+        : t.isHost
+          ? ''
+          : 'Waiting for the host to start.';
     $('waitMsg').className = 'muted';
   }
 }
@@ -895,7 +911,7 @@ async function refreshStats(seq) {
     note(
       pending > 0
         ? `Still working out ${pending} game${pending === 1 ? '' : 's'}: look again in a moment.`
-        : `Shown from ${minGames} games. Only games with no computer players, saved with their deals, count (the "of" column shows how many of a player's games that is).`,
+        : `Shown from ${minGames} games. Only online season games, saved with their deals, count (the "of" column shows how many of a player's games that is).`,
     );
     if (!rows.length) return message(season ? 'No games with their deals saved yet.' : '');
     body.innerHTML = '';
@@ -1643,6 +1659,12 @@ async function boot() {
     $('who').textContent = user.name;
     show('account', true);
   }
+  try {
+    devTables = !!(await api.config()).devTables;
+  } catch {
+    /* the production rules are the safe default */
+  }
+  for (const el of document.querySelectorAll('.dev-only')) el.hidden = !devTables;
   if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
   else startGame();
 }
