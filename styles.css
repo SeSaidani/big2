@@ -1515,6 +1515,29 @@ button.ghost.active {
   margin: 0 auto;
 }
 
+/* A portrait phone: the table fills the screen under the header, so the spare height goes to the middle
+   (where the played cards show) and your hand stays at the bottom, under your thumb. */
+@media (max-width: 700px) and (orientation: portrait) {
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .layout {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* The side seats hug their cards: stretched to the taller middle row, their "thinking" highlight
+     would become a tall empty box. */
+  .seat-west,
+  .seat-east {
+    align-self: center;
+  }
+}
+
 /* On a phone the play log and chat are a sheet over the table, opened by the Log button, so the
    table keeps the whole screen. (A landscape phone, too short for a side panel, does the same.) */
 .compact-only {

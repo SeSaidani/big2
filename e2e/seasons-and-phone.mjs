@@ -173,6 +173,7 @@ async function main() {
       slices: slices.map(s => s && Math.round(s.width)),
       minLeft: Math.min(...rects.map(r => r.left)), maxRight: Math.max(...rects.map(r => r.right)),
       vw: innerWidth, scrollW: document.documentElement.scrollWidth,
+      vh: innerHeight, scrollH: document.documentElement.scrollHeight,
       tableBottom: $('tableMain').getBoundingClientRect().bottom, cardBottom: Math.max(...rects.map(r => r.bottom)),
     };
   })()`);
@@ -181,6 +182,11 @@ async function main() {
     'all 14 cards fit inside the phone screen',
     geom.n === 14 && geom.minLeft >= -1 && geom.maxRight <= geom.vw + 1,
     `left ${geom.minLeft.toFixed(0)}..right ${geom.maxRight.toFixed(0)} of ${geom.vw}`,
+  );
+  check(
+    'on a tall phone the table fills the screen without scrolling',
+    geom.tableBottom >= geom.vh - 24 && geom.scrollH <= geom.vh + 1,
+    `table ends ${geom.tableBottom.toFixed(0)} of ${geom.vh}, page ${geom.scrollH}`,
   );
   check('no sideways scrolling on the phone', geom.scrollW <= geom.vw + 1, `${geom.scrollW} <= ${geom.vw}`);
   check(
