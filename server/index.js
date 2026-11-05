@@ -54,7 +54,8 @@ import { createSmsProvider, smsConfigFromEnv } from './sms/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_BODY = 4096;
-const SESSION_MS = 30 * 24 * 3600 * 1000;
+const SESSION_MS = 30 * 24 * 3600 * 1000; // from the last use...
+const SESSION_MAX_MS = 180 * 24 * 3600 * 1000; // ...but never beyond this from sign-in
 const COOKIE = 'sid';
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -191,8 +192,28 @@ export function createApp(opts = {}) {
 
   const sessionToken = (req) => auth.parseCookies(req.headers.cookie)[COOKIE];
 
-  const requireUser = (req) => {
+  // Which response answers a request, so a renewed session can put its fresh cookie on it.
+  const responses = new WeakMap();
+
+  // Using the site keeps you signed in: a session with under half its life left is extended and
+  // the browser gets a new cookie to match.
+  function renewSession(req) {
+    const token = sessionToken(req);
+    const expires = auth.renewSession(db, token, SESSION_MS, SESSION_MAX_MS);
+    const res = responses.get(req);
+    if (expires && res && !res.headersSent) {
+      res.setHeader('Set-Cookie', cookieFor(token, Math.floor((expires - Date.now()) / 1000)));
+    }
+  }
+
+  const currentUser = (req) => {
     const user = auth.getSession(db, sessionToken(req));
+    if (user) renewSession(req);
+    return user;
+  };
+
+  const requireUser = (req) => {
+    const user = currentUser(req);
     if (!user) throw new HttpError(401, 'Please log in.');
     return user;
   };
@@ -550,7 +571,7 @@ export function createApp(opts = {}) {
     if (p === '/api/game' && m === 'POST') {
       const body = await readJson(req);
       requirePhone(user);
-      lobby.create(user, body.aiLevel);
+      lobby.create(user, body.aiLevel, body.seats);
       return gameReply(res, user, 201);
     }
     const act = /^\/api\/game\/(join|leave|start|move|chat)$/.exec(p);
@@ -574,11 +595,21 @@ export function createApp(opts = {}) {
     throw new HttpError(404, 'Not found.');
   }
 
-  // Only the client files are public; server/, test/, data/ and package.json never are.
+  // Only the client files are served; server/, test/, data/ and package.json never are. The game
+  // itself (the page and its scripts) goes only to a signed-in user; everyone else gets the sign-in
+  // page, which has just what it needs to sign in.
   function serveStatic(req, res, pathname) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
+    const isGame = pathname === '/' || pathname === '/index.html' || pathname.startsWith('/src/');
+    const signedIn = isGame && !!currentUser(req);
+    if (isGame && !signedIn) {
+      if (pathname.startsWith('/src/')) throw new HttpError(401, 'Please log in.');
+      pathname = '/signin.html';
+    }
     let rel = null;
     if (pathname === '/' || pathname === '/index.html') rel = 'index.html';
+    else if (pathname === '/signin.html') rel = 'signin.html';
+    else if (pathname === '/signin.js') rel = 'signin.js';
     else if (pathname === '/styles.css') rel = 'styles.css';
     else if (pathname === '/favicon.svg' || pathname === '/favicon.ico') rel = 'favicon.svg';
     else if (pathname === '/manifest.webmanifest') rel = 'manifest.webmanifest';
@@ -597,6 +628,7 @@ export function createApp(opts = {}) {
 
   const server = http.createServer(async (req, res) => {
     for (const [k, v] of Object.entries(HEADERS)) res.setHeader(k, v);
+    responses.set(req, res);
     try {
       const url = new URL(req.url, 'http://x');
       if (url.pathname.startsWith('/api/')) await api(req, res, url);

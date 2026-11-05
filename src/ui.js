@@ -10,8 +10,12 @@ import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
 import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
 
-const SOLO_NAMES = ['You', 'West', 'North', 'East'];
-let NAMES = SOLO_NAMES;
+// Seats are numbered clockwise from you. At a table of four they sit West, North, East; at three, West and East.
+const SOLO_NAMES = { 4: ['You', 'West', 'North', 'East'], 3: ['You', 'West', 'East'] };
+let NAMES = SOLO_NAMES[4];
+const noActions = (n) => new Array(n).fill(null);
+// The page has a North seat element; a table of three leaves it empty and puts seat 2 in the East one.
+const seatElId = (p, n) => (n === 3 && p === 2 ? 3 : p);
 const AI_DELAY_MS = 750;
 const TRICK_PAUSE_MS = 1200;
 const AI_TIMEOUT_MS = 10000;
@@ -21,12 +25,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let game = null;
 let selected = new Set();
 let shownTrick = null; // stays visible briefly after a trick closes
-let seatActions = [null, null, null, null];
+let seatActions = noActions(4);
 let thinking = -1;
 let busy = false;
 let gen = 0; // bumps on New game so stale async work is dropped
 let sortMode = localStorage.getItem('big2.sort') || 'rank';
-let level = localStorage.getItem('big2.level') || 'medium';
+const LEVEL_LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+let level = localStorage.getItem('big2.level');
+if (!(level in LEVEL_LABEL)) level = 'medium'; // a stale or edited stored value must not reach the AI
+let soloPlayers = localStorage.getItem('big2.players') === '3' ? 3 : 4; // seats at a solo table
 // Online mode (see the section at the end of this file).
 let mode = 'solo'; // 'solo' | 'online'
 let user = null;
@@ -39,8 +46,6 @@ let lobbyGame = null; // summary of the one game, or null
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
-let registrationOpen = false;
-let codeLogin = false; // the server can text sign-in codes
 let lbKind = 'human';
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
@@ -128,7 +133,7 @@ function fanRow(cards, deg = 3) {
 
 // ---------- Rendering ----------
 function renderSeat(p) {
-  const el = $(`seat-${p}`);
+  const el = $(`seat-${seatElId(p, game.hands.length)}`);
   el.classList.toggle('active', game.turn === p && game.winner < 0);
   el.innerHTML = '';
   const n = game.hands[p].length;
@@ -208,7 +213,32 @@ function renderHand() {
     fan.appendChild(fanRow(seatActions[0].cards));
   }
   document.querySelector('.me').classList.toggle('active', game.turn === 0 && game.winner < 0);
+  fitHand();
 }
+
+// A hand of 14 fits at the stylesheet's overlap, but at a table of three it can hold 20 cards. If the
+// row would be wider than its section, overlap the cards more: width = n*cw - (n-1)*overlap, so
+// overlap = (n*cw - available) / (n-1). The stylesheet's value is never reduced, only increased, and
+// it goes in --hand-overlap so the width of the highlighted section (computed from --overlap) is unchanged.
+const HAND_SLACK = 8; // px kept free for the tilt of the outer cards
+function fitHand() {
+  const me = document.querySelector('.me');
+  const n = $('hand').children.length;
+  me.style.removeProperty('--hand-overlap');
+  // Not laid out yet (the table is hidden, so the width is 0): measuring now would give nonsense. The
+  // observer below calls this again once the section has a size.
+  if (n < 2 || me.clientWidth === 0) return;
+  const cs = getComputedStyle(me);
+  const cw = parseFloat(cs.getPropertyValue('--cw'));
+  const base = parseFloat(cs.getPropertyValue('--overlap'));
+  const avail = me.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - HAND_SLACK;
+  const needed = (n * cw - avail) / (n - 1);
+  if (Number.isFinite(needed) && Number.isFinite(base) && needed > base) {
+    me.style.setProperty('--hand-overlap', `${Math.min(needed, cw - 8)}px`);
+  }
+}
+// Re-fit whenever the section changes size: a resize, a rotation, or the table appearing.
+new ResizeObserver(fitHand).observe(document.querySelector('.me'));
 
 // Selecting cards: tap one to toggle it, or drag a finger (or the mouse) across
 // several to select, or deselect, all of them. 14 overlapped cards on a phone
@@ -287,7 +317,9 @@ function renderRecord() {
 }
 
 function render() {
-  for (const p of [1, 2, 3]) renderSeat(p);
+  const n = game.hands.length;
+  $('seat-2').hidden = n === 3; // the North seat is empty at a table of three
+  for (let p = 1; p < n; p++) renderSeat(p);
   renderCenter();
   renderHand();
   renderSelection();
@@ -311,14 +343,19 @@ function log(text, cls = '', cards = null) {
 }
 
 // ---------- Turn flow ----------
+function renderSoloChip() {
+  $('soloChip').textContent = `${soloPlayers} players · ${LEVEL_LABEL[level]}`;
+}
+
 function startGame() {
+  renderSoloChip();
   gen++;
   pending.clear();
-  NAMES = SOLO_NAMES;
-  game = newGame();
+  NAMES = SOLO_NAMES[soloPlayers];
+  game = newGame(Math.random, null, soloPlayers);
   selected = new Set();
   shownTrick = null;
-  seatActions = [null, null, null, null];
+  seatActions = noActions(soloPlayers);
   thinking = -1;
   busy = false;
   $('log').innerHTML = '';
@@ -381,7 +418,7 @@ async function commit(cards) {
   if (cards) {
     shownTrick = { cards, cls, by: p };
     // A new trick starts: clear the previous trick's lead-pass markers.
-    for (let q = 0; q < 4; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
+    for (let q = 0; q < seatActions.length; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
     log(`${NAMES[p]}: ${describe(cls)}`, p === 0 ? 'you' : '', cards);
     skipped = autoSkip(game);
     for (const q of skipped) seatActions[q] = 'cantbeat';
@@ -404,7 +441,7 @@ async function commit(cards) {
     await sleep(TRICK_PAUSE_MS);
     if (g !== gen) return;
     shownTrick = null;
-    seatActions = [null, null, null, null];
+    seatActions = noActions(game.hands.length);
   }
   continueTurn();
 }
@@ -421,7 +458,7 @@ function endRound() {
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
   box.innerHTML = '';
-  for (let p = 0; p < 4; p++) {
+  for (let p = 0; p < game.hands.length; p++) {
     if (p === w) continue;
     const row = document.createElement('div');
     row.className = 'end-row';
@@ -467,7 +504,31 @@ $('sortBtn').addEventListener('click', () => {
   localStorage.setItem('big2.sort', sortMode);
   render();
 });
-$('newBtn').addEventListener('click', startGame);
+// The settings of a solo game are chosen here and then fixed: the header only shows them. Starting a
+// game replaces the one in progress, so the dialog says so when one is (the opening play has been made).
+const gameInProgress = () => mode === 'solo' && !!game && game.winner < 0 && !game.first;
+$('newBtn').addEventListener('click', () => {
+  $('ngPlayers').value = String(soloPlayers);
+  $('ngLevel').value = level;
+  show('ngWarn', gameInProgress());
+  $('newGameDlg').showModal();
+});
+$('ngStart').addEventListener('click', () => {
+  soloPlayers = $('ngPlayers').value === '3' ? 3 : 4;
+  level = $('ngLevel').value in LEVEL_LABEL ? $('ngLevel').value : 'medium';
+  localStorage.setItem('big2.players', String(soloPlayers));
+  localStorage.setItem('big2.level', level);
+  $('newGameDlg').close();
+  startGame();
+});
+$('ngCancel').addEventListener('click', () => $('newGameDlg').close());
+$('helpBtn').addEventListener('click', () => {
+  const dlg = $('helpDlg');
+  dlg.showModal();
+  dlg.scrollTop = 0; // focus lands on the Close button at the bottom, which would scroll the page down
+});
+$('helpClose').addEventListener('click', () => $('helpDlg').close());
+$('helpX').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
 // The play log can be folded away. It starts folded on a phone, where the table needs the room.
 const logPanel = document.querySelector('.log');
@@ -480,11 +541,6 @@ $('logToggle').addEventListener('click', () => {
   const open = logPanel.classList.contains('collapsed');
   setLogOpen(open);
   localStorage.setItem('big2.log', open ? 'open' : 'closed');
-});
-$('level').value = level;
-$('level').addEventListener('change', (e) => {
-  level = e.target.value;
-  localStorage.setItem('big2.level', level);
 });
 document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || ['SELECT', 'INPUT'].includes(e.target.tagName)) return;
@@ -549,26 +605,17 @@ async function enterOnline() {
   show('lobbyHome', false); // shown once we know who is signed in
   show('waitRoom', false);
   try {
-    const config = await api.config();
-    registrationOpen = config.registrationOpen;
-    codeLogin = !!config.codeLogin;
-  } catch {
-    registrationOpen = false;
-    codeLogin = false;
-  }
-  try {
     user = (await api.me()).user;
   } catch {
     user = null;
   }
-  if (!user) return openLogin('');
+  if (!user) return sessionLost();
   beginOnline();
 }
 
 function beginOnline() {
   $('who').textContent = user.name;
-  $('lobbyUser').textContent = user.name;
-  show('logoutBtn', true);
+  show('account', true);
   show('passwordBtn', true);
   show('phoneBtn', true);
   show('adminBtn', user.isAdmin);
@@ -642,74 +689,11 @@ function closeStream() {
   eventSource = null;
 }
 
+// The server no longer knows me (expired, signed out elsewhere, account disabled): a reload
+// brings the sign-in page, since the game is only served to a signed-in user.
 function sessionLost() {
   closeStream();
-  user = null;
-  table = null;
-  show('logoutBtn', false);
-  show('passwordBtn', false);
-  show('phoneBtn', false);
-  show('adminBtn', false);
-  openLogin('Your session has ended. Please sign in again.');
-}
-
-function openLogin(message) {
-  $('loginErr').textContent = message;
-  $('loginPw').value = '';
-  $('loginCode').value = '';
-  show('loginCodeField', false);
-  show('codeBtn', codeLogin);
-  show('registerBtn', registrationOpen);
-  show('loginPhoneField', registrationOpen);
-  $('loginHelp').textContent = registrationOpen
-    ? 'Sign in, or create an account (3-20 letters, digits, _ or -; password of at least 10 characters).'
-    : codeLogin
-      ? 'Accounts are created by an admin. Enter your name and text yourself a sign-in code, or use your password.'
-      : 'Accounts are created by an admin. Enter the name and password you were given.';
-  if (!$('loginDlg').open) $('loginDlg').showModal();
-  $('loginName').focus();
-}
-
-async function submitAuth(kind) {
-  $('loginErr').textContent = '';
-  try {
-    const name = $('loginName').value.trim();
-    const code = $('loginCode').value.trim();
-    const reply =
-      kind === 'register'
-        ? await api.register(name, $('loginPw').value, $('loginPhone').value)
-        : code
-          ? await api.loginVerify(name, code)
-          : await api.login(name, $('loginPw').value);
-    user = reply.user;
-  } catch (err) {
-    $('loginErr').textContent = err.message;
-    return;
-  }
-  $('loginPw').value = '';
-  $('loginCode').value = '';
-  $('loginDlg').close();
-  beginOnline();
-}
-
-// Texts a code to the account's number. The server answers the same for any name,
-// so the message here says "if" rather than confirming anything.
-async function askForCode() {
-  $('loginErr').textContent = '';
-  const name = $('loginName').value.trim();
-  if (!name) {
-    $('loginErr').textContent = 'Enter your name first.';
-    return;
-  }
-  try {
-    await api.loginCode(name);
-  } catch (err) {
-    $('loginErr').textContent = err.message;
-    return;
-  }
-  show('loginCodeField', true);
-  $('loginErr').textContent = 'If that account exists, a code is on its way. Enter it below.';
-  $('loginCode').focus();
+  location.reload();
 }
 
 // ---- which screen is showing ----
@@ -764,9 +748,30 @@ function renderLobbyHome() {
     if (!user.isAdmin) line('No game is running. An admin starts the games.', 'muted');
     return;
   }
-  const names = g.players.length ? g.players.join(', ') : 'nobody yet';
-  const state = { waiting: 'waiting to start', playing: 'in progress', done: 'just finished' }[g.status] || g.status;
-  line(`${g.host}'s game is ${state}. Players: ${names}. ${g.aiLevel} AI fills empty seats.`);
+  // The current game, as a card: who is hosting, where it is up to, who is in, and what the empty seats get.
+  const state = { waiting: 'Waiting to start', playing: 'In progress', done: 'Just finished' }[g.status] || g.status;
+  const empty = g.seats - g.humans;
+  const facts = document.createElement('dl');
+  facts.className = 'facts';
+  for (const [label, value] of [
+    ['Host', g.host],
+    ['Status', state],
+    ['Table', `${g.seats} seats`],
+    ['Players', g.players.length ? g.players.join(', ') : 'nobody yet'],
+    [
+      'Computer',
+      empty > 0
+        ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}`
+        : 'no computer players',
+    ],
+  ]) {
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    facts.append(dt, dd);
+  }
+  box.appendChild(facts);
   const row = document.createElement('div');
   row.className = 'row';
   if (table) {
@@ -907,7 +912,7 @@ function clearTrickReset() {
 
 function clearTrickDisplay() {
   shownTrick = null;
-  seatActions = [null, null, null, null];
+  seatActions = noActions(game ? game.hands.length : 4);
 }
 
 // A new view from the server (or the reply to my own move). Views carry a
@@ -981,7 +986,7 @@ function applyEvents(events, replay) {
   for (const e of events) {
     const who = NAMES[e.p];
     if (e.cards) {
-      for (let q = 0; q < 4; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
+      for (let q = 0; q < seatActions.length; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
       if (!replay) seatActions[e.p] = { cards: e.cards, cls: e.cls };
       shownTrick = { cards: e.cards, cls: e.cls, by: e.p };
       lastPlay = e;
@@ -1025,7 +1030,7 @@ function endOnlineRound(t, alreadyShown) {
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
   box.innerHTML = '';
-  for (let p = 0; p < 4; p++) {
+  for (let p = 0; p < game.hands.length; p++) {
     const row = document.createElement('div');
     row.className = 'end-row';
     row.innerHTML = `<span class="who">${NAMES[p]}</span>`;
@@ -1033,7 +1038,7 @@ function endOnlineRound(t, alreadyShown) {
     cards.className = 'cards';
     if (p !== w) cards.appendChild(cardRow(sortByRank(game.hands[p])));
     row.appendChild(cards);
-    const d = r ? r.delta[unrot(p, t.you)] : 0;
+    const d = r ? r.delta[unrot(p, t.you, t.seats.length)] : 0;
     const pts = document.createElement('span');
     pts.className = `pts ${d > 0 ? 'win' : 'loss'}`;
     pts.textContent = `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)}`;
@@ -1243,7 +1248,6 @@ async function saveSeason() {
 }
 
 function renderAdmin(o, users, entries) {
-  registrationOpen = o.registrationOpen;
   $('adminStats').textContent =
     `${o.stats.users} accounts · ${o.stats.gamesFinished} finished games · ${o.stats.gamesCancelled} cancelled · ${o.online} connected now`;
   $('regState').textContent = o.registrationOpen
@@ -1457,28 +1461,24 @@ async function submitPassword() {
 // ---- wiring ----
 $('modeSolo').addEventListener('click', () => mode !== 'solo' && enterSolo());
 $('modeOnline').addEventListener('click', () => mode !== 'online' && enterOnline());
-$('loginBtn').addEventListener('click', () => submitAuth('login'));
-$('registerBtn').addEventListener('click', () => submitAuth('register'));
-$('codeBtn').addEventListener('click', askForCode);
-$('loginCancel').addEventListener('click', () => $('loginDlg').close());
-$('loginDlg').addEventListener('close', () => {
-  if (mode === 'online' && !user) enterSolo();
+// The account menu closes when an item is chosen, on a click elsewhere, or on Escape.
+const account = $('account');
+account.addEventListener('click', (e) => {
+  if (e.target.closest('.menu button')) account.open = false;
 });
-for (const id of ['loginName', 'loginPw', 'loginCode']) {
-  $(id).addEventListener('keydown', (e) => e.key === 'Enter' && submitAuth('login'));
-}
+document.addEventListener('click', (e) => {
+  if (account.open && !account.contains(e.target)) account.open = false;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && account.open) account.open = false;
+});
 $('logoutBtn').addEventListener('click', async () => {
   try {
     await api.logout();
   } catch {
     /* already signed out */
   }
-  user = null;
-  show('logoutBtn', false);
-  show('passwordBtn', false);
-  show('phoneBtn', false);
-  show('adminBtn', false);
-  enterSolo();
+  location.reload(); // the sign-in page is all that is served now
 });
 $('adminBtn').addEventListener('click', () => {
   adminView = !adminView;
@@ -1510,7 +1510,9 @@ $('resetCancel').addEventListener('click', () => $('resetDlg').close());
 $('resetGen').addEventListener('click', () => ($('resetPw').value = randomPassword()));
 $('genPwBtn').addEventListener('click', () => ($('newUserPw').value = randomPassword()));
 $('createUserBtn').addEventListener('click', submitCreateUser);
-$('createBtn').addEventListener('click', () => gameAction(() => api.createGame($('newLevel').value), 'lobbyMsg'));
+$('createBtn').addEventListener('click', () =>
+  gameAction(() => api.createGame($('newLevel').value, Number($('newSeats').value)), 'lobbyMsg'),
+);
 $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
 $('leaveBtn').addEventListener('click', backToLobby);
@@ -1536,6 +1538,20 @@ $('lbAi').addEventListener('click', () => {
   refreshLeaderboard();
 });
 
-renderRecord();
-if (localStorage.getItem('big2.mode') === 'online') enterOnline();
-else startGame();
+// The game is only served to a signed-in user, so this is a check that the session still holds,
+// not a login. Signed in, you land where you left off (online the first time).
+async function boot() {
+  renderRecord();
+  try {
+    user = (await api.me()).user;
+  } catch (err) {
+    if (err.status === 401) return sessionLost();
+  }
+  if (user) {
+    $('who').textContent = user.name;
+    show('account', true);
+  }
+  if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
+  else startGame();
+}
+boot();

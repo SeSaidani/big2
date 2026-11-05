@@ -5,10 +5,12 @@
 export const RANK_NAMES = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
 export const SUIT_NAMES = ['♦', '♣', '♥', '♠'];
 export const NUM_RANKS = 13;
-export const NUM_PLAYERS = 4;
+export const NUM_PLAYERS = 4; // the usual table; games can also seat 3 (see dealHands)
+export const PLAYER_COUNTS = [3, 4];
 export const FIRST_JOKER = 52;
 export const DECK_SIZE = 56;
-export const HAND_SIZE = 14;
+export const HAND_SIZE = 14; // each hand at a table of 4
+export const HAND_SIZE_3 = 18; // each hand at a table of 3, before the two spare cards
 export const THREE_OF_DIAMONDS = 0;
 export const RANK_TWO = 12;
 export const SPADES = 3;
@@ -49,16 +51,33 @@ export function shuffle(arr, rng = Math.random) {
   return arr;
 }
 
-export function dealHands(rng = Math.random) {
+export const SPADE_TWO = cardId(RANK_TWO, SPADES); // 51
+
+// Deals a shuffled 56-card deck to 4 players (14 each) or 3 (18 each, plus the two spare cards).
+//
+// Three players: 3 x 18 = 54 leaves 2 spare cards. They go one each to the holder of the 3♦ (who must
+// open, so the extra card is their price for it) and to the holder of the 2♠ (the highest card). If one
+// player holds both, they get both. So the 3♦ holder has 19 cards (20 if they also hold the 2♠), and the
+// 2♠ holder 19. To make "the holder" well defined, the spares are drawn from the 54 cards other than the
+// 3♦ and 2♠, then the rest are dealt; the spares are therefore uniformly random among those.
+export function dealHands(rng = Math.random, players = NUM_PLAYERS) {
+  if (!PLAYER_COUNTS.includes(players)) throw new RangeError(`A table seats 3 or 4 players, not ${players}`);
   const deck = shuffle(
     Array.from({ length: DECK_SIZE }, (_, i) => i),
     rng,
   );
-  const hands = [];
-  for (let p = 0; p < NUM_PLAYERS; p++) {
-    hands.push(deck.slice(p * HAND_SIZE, (p + 1) * HAND_SIZE).sort((a, b) => a - b));
+  const byId = (a, b) => a - b;
+  if (players === NUM_PLAYERS) {
+    return Array.from({ length: players }, (_, p) => deck.slice(p * HAND_SIZE, (p + 1) * HAND_SIZE).sort(byId));
   }
-  return hands;
+  const special = new Set([THREE_OF_DIAMONDS, SPADE_TWO]);
+  const others = deck.filter((c) => !special.has(c));
+  const spare = others.slice(0, DECK_SIZE - players * HAND_SIZE_3);
+  const dealt = deck.filter((c) => !spare.includes(c));
+  const hands = Array.from({ length: players }, (_, p) => dealt.slice(p * HAND_SIZE_3, (p + 1) * HAND_SIZE_3));
+  hands[hands.findIndex((h) => h.includes(THREE_OF_DIAMONDS))].push(spare[0]);
+  hands[hands.findIndex((h) => h.includes(SPADE_TWO))].push(spare[1]);
+  return hands.map((h) => h.sort(byId));
 }
 
 export function sortByRank(cards) {

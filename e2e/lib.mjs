@@ -114,13 +114,20 @@ export class Page {
     return r.result.result.value;
   }
 
+  // Polls until expr is truthy. A page that is navigating (sign-in reloads into the game) answers
+  // with errors for a moment, so those are retried and only reported if the wait runs out.
   async waitFor(expr, ms = 15000, label = expr) {
     const t0 = Date.now();
+    let last = '';
     while (Date.now() - t0 < ms) {
-      if (await this.ev(expr)) return;
+      try {
+        if (await this.ev(expr)) return;
+      } catch (err) {
+        last = ' (last error: ' + err.message.slice(0, 160) + ')';
+      }
       await sleep(100);
     }
-    throw new Error(`[${this.name}] timed out waiting for: ${label}`);
+    throw new Error(`[${this.name}] timed out waiting for: ${label}${last}`);
   }
 
   async shot(name) {
@@ -150,14 +157,18 @@ export class Page {
     );
   }
 
+  // The sign-in page is all a signed-out visitor gets; on success it reloads into the game.
   async signIn(name, password) {
-    await this.click('modeOnline');
-    await this.waitFor(`document.getElementById('loginDlg').open`, 5000, 'login dialog');
+    await this.waitFor(
+      `!!document.getElementById('form') && document.activeElement.id === 'name'`,
+      8000,
+      'sign-in page',
+    );
     await this.ev(
-      `document.getElementById('loginName').value=${JSON.stringify(name)}; document.getElementById('loginPw').value=${JSON.stringify(password)}; document.getElementById('loginBtn').click()`,
+      `document.getElementById('name').value=${JSON.stringify(name)}; document.getElementById('pw').value=${JSON.stringify(password)}; document.getElementById('loginBtn').click()`,
     );
     await this.waitFor(
-      `document.getElementById('lobbyUser').textContent===${JSON.stringify(name)} && !document.getElementById('lobbyHome').hidden`,
+      `document.getElementById('who').textContent===${JSON.stringify(name)} && !document.getElementById('lobbyHome').hidden`,
       10000,
       `${name} in the lobby`,
     );

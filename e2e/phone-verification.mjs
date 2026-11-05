@@ -36,7 +36,6 @@ async function main() {
 
   // The admin (made at the command line: number set, counts as verified) signs in and creates a game.
   await A.goto(BASE);
-  await A.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'page loads');
   await A.signIn('boss', ADMIN_PW);
   check('the command-line admin is not asked for a number', !(await A.ev(`document.getElementById('phoneDlg').open`)));
   await A.ev(`document.getElementById('newLevel').value='easy'; document.getElementById('createBtn').click()`);
@@ -79,7 +78,6 @@ async function main() {
 
   // dana signs in: held at the gate, the phone dialog opens by itself.
   await D.goto(BASE);
-  await D.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'D page loads');
   await D.signIn('dana', TEMP_PW);
   await D.waitFor(`document.getElementById('phoneDlg').open`, 8000, 'the phone dialog opens at sign-in');
   check('a user with an unverified number is taken to the phone dialog', true);
@@ -145,17 +143,16 @@ async function main() {
   await A.click('regBtn');
   await A.waitFor(`document.getElementById('regState').textContent.startsWith('Anyone')`, 8000, 'registration opened');
   await A.click('logoutBtn');
-  await A.waitFor(`document.body.classList.contains('solo')`, 8000, 'log-out to finish');
-  await A.click('modeOnline');
-  await A.waitFor(`document.getElementById('loginDlg').open`, 8000, 'login dialog');
-  check('the sign-in dialog asks for a number when sign-up is open', await A.visible('loginPhoneField'));
+  await A.waitFor(`!!document.getElementById('form') && !document.getElementById('hand')`, 8000, 'back at sign-in');
+  check('logging out leaves only the sign-in page', !(await A.ev(`!!document.querySelector('script[src*="ui.js"]')`)));
+  check('the sign-in page asks for a number when sign-up is open', await A.visible('phoneField'));
   await A.shot('4-register-with-phone');
 
   // Signing in by texted code: dana asks for one, a wrong code is refused, the right one signs her in.
-  check('the sign-in dialog offers a texted code', await A.visible('codeBtn'));
-  check('the code box waits until a code is asked for', !(await A.visible('loginCodeField')));
-  await A.ev(`document.getElementById('loginName').value='dana'; document.getElementById('codeBtn').click()`);
-  await A.waitFor(`!document.getElementById('loginCodeField').hidden`, 8000, 'the code box');
+  check('the sign-in page offers a texted code', await A.visible('codeBtn'));
+  check('the code box waits until a code is asked for', !(await A.visible('codeField')));
+  await A.ev(`document.getElementById('name').value='dana'; document.getElementById('codeBtn').click()`);
+  await A.waitFor(`!document.getElementById('codeField').hidden`, 8000, 'the code box');
   const signInCode = () => {
     const all = [...env.state.out.matchAll(/Big Two sign-in code: (\d{6})/g)];
     return all.length ? all[all.length - 1][1] : null;
@@ -163,14 +160,14 @@ async function main() {
   for (let i = 0; i < 100 && !signInCode(); i++) await new Promise((r) => setTimeout(r, 50));
   const signIn = signInCode();
   check('a sign-in code was texted', !!signIn);
-  check('the message does not confirm the account exists', (await A.text('loginErr')).startsWith('If that account'));
+  check('the message does not confirm the account exists', (await A.text('err')).startsWith('If that account'));
   const wrong = signIn === '000000' ? '111111' : '000000';
-  await A.ev(`document.getElementById('loginCode').value='${wrong}'; document.getElementById('loginBtn').click()`);
-  await A.waitFor(`document.getElementById('loginErr').textContent.includes('wrong or has expired')`, 8000, 'refusal');
-  check('a wrong code is refused', true, await A.text('loginErr'));
-  await A.ev(`document.getElementById('loginCode').value='${signIn}'; document.getElementById('loginBtn').click()`);
+  await A.ev(`document.getElementById('code').value='${wrong}'; document.getElementById('loginBtn').click()`);
+  await A.waitFor(`document.getElementById('err').textContent.includes('wrong or has expired')`, 8000, 'refusal');
+  check('a wrong code is refused', true, await A.text('err'));
+  await A.ev(`document.getElementById('code').value='${signIn}'; document.getElementById('loginBtn').click()`);
   await A.waitFor(
-    `document.getElementById('lobbyUser').textContent==='dana' && !document.getElementById('lobbyHome').hidden`,
+    `document.getElementById('who').textContent==='dana' && !document.getElementById('lobbyHome').hidden`,
     10000,
     'dana signed in by code',
   );

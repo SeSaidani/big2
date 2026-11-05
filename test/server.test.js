@@ -129,21 +129,20 @@ test('hardening: auth required, body size, content type, origin, static whitelis
       403,
     );
     assert.equal((await anon.req('POST', '/api/login', { name: 'a', password: 'b' }, { origin: base })).status, 401);
-    for (const p of [
-      '/server/db.js',
-      '/package.json',
-      '/data/big2.db',
-      '/test/server.test.js',
-      '/src/..%2fpackage.json',
-      '/src/%2e%2e/package.json',
-    ]) {
+    for (const p of ['/server/db.js', '/package.json', '/data/big2.db', '/test/server.test.js']) {
       assert.equal((await fetch(base + p)).status, 404, p);
+    }
+    // Signed in, the same traversal tricks under /src/ still find nothing.
+    const member = await makeUser({ app, base }, 'walker');
+    for (const p of ['/src/..%2fpackage.json', '/src/%2e%2e/package.json', '/src/../package.json']) {
+      const r = await fetch(base + p, { headers: { cookie: member.cookie } });
+      assert.equal(r.status, 404, p);
     }
     const page = await fetch(base + '/');
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
-    assert.equal((await fetch(base + '/src/game.js')).status, 200);
+    assert.equal((await fetch(base + '/src/game.js')).status, 401); // the game needs a sign-in (login-gate.test.js)
     const icon = await fetch(base + '/favicon.svg');
     assert.equal(icon.status, 200);
     assert.match(icon.headers.get('content-type'), /svg/);
@@ -242,6 +241,49 @@ test('four humans play a full game: no view leaks a hand, result is zero-sum and
     // A finished round does not block the next game: an admin simply creates one.
     assert.equal((await clients[0].req('POST', '/api/game', { aiLevel: 'easy' })).status, 201);
     assert.equal(tableOf(ctx).status, 'waiting');
+  } finally {
+    await ctx.app.close();
+  }
+});
+
+test('three humans at a table of three play a full game: view and result have three seats', async () => {
+  const ctx = await boot({ rng: mulberry32(11) });
+  try {
+    const clients = await seatPlayers(ctx, 'tri', 3, 'easy', 3);
+    for (const c of clients) driveEasy(c, c.ev, () => tableOf(ctx).game);
+    assert.equal((await clients[0].req('POST', '/api/game/start')).status, 200);
+    const finals = await Promise.all(clients.map((c) => c.ev.waitFor(isDone, 30000)));
+    for (const c of clients) assert.deepEqual(c.errors, []);
+
+    const r = finals[0].data.result;
+    assert.equal(r.delta.length, 3);
+    assert.equal(finals[0].data.seats.length, 3);
+    assert.equal(
+      r.delta.reduce((a, b) => a + b, 0),
+      0,
+    );
+    assert.ok(r.delta[r.winner] > 0);
+    assert.equal(r.saved, true);
+    assert.equal(finals[0].data.hands.length, 3);
+    assert.equal(finals[0].data.hands[r.winner].length, 0);
+    assert.equal(ctx.app.db.prepare('SELECT COUNT(*) AS n FROM results').get().n, 3);
+    assert.equal(ctx.app.db.prepare('SELECT SUM(delta) AS s FROM results').get().s, 0);
+    assert.deepEqual(ctx.logs, []);
+  } finally {
+    await ctx.app.close();
+  }
+});
+
+test('a game has 3 or 4 seats and nothing else', async () => {
+  const ctx = await boot({ rng: mulberry32(12) });
+  try {
+    const admin = await makeUser(ctx, 'seatadmin', { isAdmin: true });
+    for (const seats of [2, 5, 0, 'x']) {
+      const r = await admin.req('POST', '/api/game', { aiLevel: 'easy', seats });
+      assert.equal(r.status, 400, `seats=${seats}`);
+    }
+    assert.equal((await admin.req('POST', '/api/game', { aiLevel: 'easy', seats: 3 })).status, 201);
+    assert.equal(tableOf(ctx).seats.length, 3);
   } finally {
     await ctx.app.close();
   }

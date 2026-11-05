@@ -40,9 +40,37 @@ async function main() {
 
   // --- admin signs in and creates a user in the UI ---
   await A.goto(BASE);
-  await A.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'solo page loads');
   await A.signIn('boss', ADMIN_PW);
   check('admin signs in and sees the Admin button', await A.visible('adminBtn'));
+  check(
+    'the account menu shows the name and starts closed',
+    (await A.text('who')) === 'boss' && !(await A.ev(`document.getElementById('account').open`)),
+  );
+  await A.click('who');
+  check(
+    'the account menu opens with Admin, Phone, Password and Log out',
+    await A.ev(
+      `document.getElementById('account').open && ['adminBtn', 'phoneBtn', 'passwordBtn', 'logoutBtn'].every((id) => document.getElementById(id).closest('.menu') && !document.getElementById(id).hidden)`,
+    ),
+  );
+  await A.ev(`document.body.click()`);
+  check('a click elsewhere closes the account menu', !(await A.ev(`document.getElementById('account').open`)));
+  await A.click('helpBtn');
+  check(
+    'the How to play dialog opens with the rules and the scoring table',
+    await A.ev(
+      `document.getElementById('helpDlg').open && document.getElementById('helpDlg').textContent.includes('Scoring') && document.querySelectorAll('#helpDlg .rates tbody tr').length === 4`,
+    ),
+  );
+  check(
+    'it opens at the top, not scrolled to the end',
+    (await A.ev(`document.getElementById('helpDlg').scrollTop`)) === 0,
+  );
+  await A.click('helpClose');
+  check('and closes again', !(await A.ev(`document.getElementById('helpDlg').open`)));
+  await A.click('helpBtn');
+  await A.click('helpX');
+  check('the × in the corner also closes it', !(await A.ev(`document.getElementById('helpDlg').open`)));
   await A.click('adminBtn');
   await A.waitFor(
     `!document.getElementById('admin').hidden && document.getElementById('usersBody').children.length >= 1`,
@@ -63,9 +91,9 @@ async function main() {
 
   // --- the new user signs in with the temporary password, then changes it ---
   await B.goto(BASE);
-  await B.waitFor(`document.querySelectorAll('#hand .card').length === 14`, 15000, 'B solo page loads');
   await B.signIn('alice', TEMP_PW);
   check('a non-admin has no Admin button', !(await B.visible('adminBtn')));
+  check('a non-admin still has Log out in the menu', await B.visible('logoutBtn'));
   await B.click('passwordBtn');
   await B.ev(
     `document.getElementById('pwCurrent').value=${JSON.stringify(TEMP_PW)}; document.getElementById('pwNext').value=${JSON.stringify(NEW_PW)}; document.getElementById('pwOk').click()`,
@@ -82,6 +110,12 @@ async function main() {
     `[...document.querySelectorAll('#gameBox button')].some(b => b.textContent === 'Join game')`,
     8000,
     'Join button for alice',
+  );
+  const card = await B.text('gameBox');
+  check(
+    'the lobby shows the current game and its settings',
+    ['Host', 'boss', 'Waiting to start', '4 seats', 'Easy AI plays the 3 empty seats'].every((s) => card.includes(s)),
+    card.replace(/\s+/g, ' ').slice(0, 120),
   );
   check(
     'a second game cannot be created while one is waiting',
@@ -285,8 +319,12 @@ async function main() {
   await A.ev(
     `(() => { const row = [...document.querySelectorAll('#usersBody tr')].find(r => r.children[0].textContent === 'alice'); const b = [...row.querySelectorAll('button')].find(x => x.textContent === 'Click again to confirm'); b.click(); })()`,
   );
-  await B.waitFor(`document.getElementById('loginDlg').open`, 15000, 'alice is signed out');
-  check('disabling a user signs them out of their open page', (await B.text('loginErr')).includes('session has ended'));
+  await B.waitFor(
+    `!!document.getElementById('form') && !document.getElementById('hand')`,
+    15000,
+    'alice is signed out',
+  );
+  check('disabling a user sends their open page back to the sign-in page', true);
   const auditText = await A.ev(
     `(async () => { await new Promise(r => setTimeout(r, 600)); return document.getElementById('auditList').textContent; })()`,
   );

@@ -63,7 +63,8 @@ export function buildContext(view) {
     if (u.length >= 1 && uj >= 1) maxPair = Math.max(maxPair, (r * 4 + 3) * TIE + 1);
     if (u.length >= 1 && u.length + uj >= 3) maxTriple = Math.max(maxTriple, r * TIE + Math.min(u.length, 3));
   }
-  const opps = [1, 2, 3].map((d) => (view.me + d) % 4);
+  const n = view.counts.length;
+  const opps = Array.from({ length: n - 1 }, (_, i) => (view.me + 1 + i) % n);
   const oppCounts = opps.map((p) => view.counts[p]);
   return {
     total,
@@ -264,7 +265,7 @@ function rankFollows(view, ctx, planner, rules) {
   const base = planner.cost(hand);
   const ownerCount = view.counts[view.trick.by];
   const urgent = ownerCount <= 2 || ctx.minOpp <= 1;
-  const handFrac = hand.length / 14;
+  const handFrac = hand.length / (view.counts.length === 3 ? 18 : 14); // a typical full hand
   const scored = [];
   for (const m of legal) {
     const rest = minus(hand, m.cards);
@@ -329,7 +330,7 @@ export class HeuristicRollout {
     const counts = state.hands.map((h) => h.length);
     this.ctx = [];
     this.planners = [];
-    for (let p = 0; p < 4; p++) {
+    for (let p = 0; p < state.hands.length; p++) {
       const ctx = buildContext({ me: p, hand: state.hands[p], played, counts });
       this.ctx.push(ctx);
       this.planners.push(new Planner(state.hands[p], ctx));

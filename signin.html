@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#041d13" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-180.png" />
+    <title>Big Two · Sign in</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="panel signin">
+      <h1 class="logo">
+        <svg viewBox="0 0 300 215" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+          <g transform="rotate(-30 150 165)">
+            <rect x="115" y="22" width="70" height="98" rx="7" fill="#f7f3e8" stroke="#000" stroke-opacity="0.3" />
+            <text
+              x="124"
+              y="44"
+              font-family="Georgia, 'Times New Roman', serif"
+              font-size="22"
+              font-weight="700"
+              fill="#c8283c"
+            >
+              3
+            </text>
+            <g transform="translate(150 78) scale(1.9)" fill="#c8283c"><path d="M0-10 7 0 0 10-7 0Z" /></g>
+          </g>
+          <g transform="rotate(30 150 165)">
+            <rect x="115" y="22" width="70" height="98" rx="7" fill="#f6e7b0" stroke="#000" stroke-opacity="0.3" />
+            <path
+              transform="translate(150 72) scale(1.5)"
+              fill="#e0b43c"
+              stroke="#8a6a12"
+              stroke-width="1.2"
+              d="M0-18 5.3-6.2 18-5.6 8.2 2.6 11.2 15 0 8.4-11.2 15-8.2 2.6-18-5.6-5.3-6.2Z"
+            />
+            <text
+              x="124"
+              y="44"
+              font-family="Georgia, 'Times New Roman', serif"
+              font-size="13"
+              font-weight="700"
+              fill="#8a6a12"
+            >
+              JOKER
+            </text>
+          </g>
+          <g>
+            <rect x="115" y="14" width="70" height="98" rx="7" fill="#fffdf6" stroke="#000" stroke-opacity="0.35" />
+            <text
+              x="124"
+              y="38"
+              font-family="Georgia, 'Times New Roman', serif"
+              font-size="24"
+              font-weight="700"
+              fill="#1b1b1f"
+            >
+              2
+            </text>
+            <g transform="translate(150 70) scale(2.1)" fill="#1b1b1f">
+              <path
+                d="M0-10C-14 0-10.5 8.5-3 5.2-3.2 8.2-4.2 10-6.4 10h12.8C4.2 10 3.2 8.2 3 5.2 10.5 8.5 14 0 0-10Z"
+              />
+            </g>
+          </g>
+          <text
+            x="150"
+            y="180"
+            text-anchor="middle"
+            font-family="Georgia, 'Times New Roman', serif"
+            font-size="40"
+            font-weight="700"
+            letter-spacing="3"
+            fill="#f7f3e8"
+          >
+            BIG
+            <tspan fill="#e0b43c">TWO</tspan>
+          </text>
+          <text
+            x="150"
+            y="204"
+            text-anchor="middle"
+            font-family="system-ui, sans-serif"
+            font-size="13"
+            letter-spacing="4"
+            fill="#9fc3ad"
+          >
+            4 JOKERS WILD
+          </text>
+        </svg>
+        <span class="sr-only">Big Two, 4 jokers wild</span>
+      </h1>
+      <p id="help" class="muted" hidden></p>
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="name">Name</label><input type="text" id="name" autocomplete="username" maxlength="20" />
+        </div>
+        <div class="field">
+          <label for="pw">Password</label
+          ><input id="pw" type="password" autocomplete="current-password" maxlength="200" />
+        </div>
+        <div class="field" id="codeField" hidden>
+          <label for="code">Code from the text message</label
+          ><input
+            id="code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            placeholder="123456"
+          />
+        </div>
+        <div class="field" id="phoneField" hidden>
+          <label for="phone">Mobile number, with country code (only to create an account)</label
+          ><input id="phone" type="tel" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
+        </div>
+        <p id="err" class="bad" role="alert"></p>
+        <div class="row">
+          <button type="submit" id="loginBtn" class="primary">Log in</button>
+          <button type="button" id="codeBtn" hidden>Text me a code</button>
+          <button type="button" id="registerBtn" hidden>Create account</button>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="signin.js"></script>
+  </body>
+</html>

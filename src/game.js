@@ -1,9 +1,10 @@
-// Game state machine. Seats 0..3 play in increasing order (0 is the human).
+// Game state machine. Seats 0..n-1 play in increasing order (0 is the human); n is 3 or 4, the
+// number of hands in the state.
 //
 // - A player who passes on someone else's play is locked out of the trick
 //   until it resets; when play comes back round to the last player who
 //   played, they lead a fresh trick.
-// - The leader may pass the lead to the next seat. If all four seats pass
+// - The leader may pass the lead to the next seat. If every seat passes
 //   it in a row, it is back with the player who had it first, who must now
 //   play. The opening play (with the 3♦) cannot be passed.
 // - Last-card rule: if the next seat has one card left, any single the
@@ -18,13 +19,16 @@ import { NUM_PLAYERS, THREE_OF_DIAMONDS, DECK_SIZE, dealHands } from './cards.js
 import { classify, beats, singleKeyOf, singleName, SINGLE } from './hands.js';
 import { legalPlays } from './moves.js';
 
-export function newGame(rng = Math.random, hands = dealHands(rng)) {
+// Pass `hands` to start from a given deal (its length is the number of players), or `players` (3 or 4)
+// to deal a fresh one.
+export function newGame(rng = Math.random, hands = null, players = NUM_PLAYERS) {
+  hands = hands || dealHands(rng, players);
   const holder = hands.findIndex((h) => h.includes(THREE_OF_DIAMONDS));
   return {
     hands: hands.map((h) => [...h]),
     turn: holder,
     trick: null, // { cards, cls, by }
-    passed: [false, false, false, false],
+    passed: hands.map(() => false),
     leadPasses: 0, // consecutive passes of the lead in the current hand-off
     first: true,
     winner: -1,
@@ -55,9 +59,9 @@ export function topSingleKey(hand) {
   return k;
 }
 
-export function rulesFor(hand, nextCount, trick, first, leadPasses) {
+export function rulesFor(hand, nextCount, trick, first, leadPasses, players) {
   return {
-    canPass: trick ? true : !first && leadPasses < NUM_PLAYERS,
+    canPass: trick ? true : !first && leadPasses < players,
     mustInclude: first ? THREE_OF_DIAMONDS : -1,
     singleKey: nextCount === 1 ? topSingleKey(hand) : -1,
   };
@@ -65,11 +69,13 @@ export function rulesFor(hand, nextCount, trick, first, leadPasses) {
 
 export function turnRules(s) {
   const p = s.turn;
-  return rulesFor(s.hands[p], s.hands[(p + 1) % NUM_PLAYERS].length, s.trick, s.first, s.leadPasses);
+  const n = s.hands.length;
+  return rulesFor(s.hands[p], s.hands[(p + 1) % n].length, s.trick, s.first, s.leadPasses, n);
 }
 
 export function viewRules(v) {
-  return rulesFor(v.hand, v.counts[(v.me + 1) % NUM_PLAYERS], v.trick, v.first, v.leadPasses);
+  const n = v.counts.length;
+  return rulesFor(v.hand, v.counts[(v.me + 1) % n], v.trick, v.first, v.leadPasses, n);
 }
 
 export function legalMoves(s) {
@@ -119,9 +125,9 @@ export function applyMove(s, cards, cls = null) {
       s.passed[p] = true;
       advance(s);
     } else {
-      if (s.first || s.leadPasses >= NUM_PLAYERS) throw new Error('Cannot pass the lead here');
+      if (s.first || s.leadPasses >= s.hands.length) throw new Error('Cannot pass the lead here');
       s.leadPasses++;
-      s.turn = (p + 1) % NUM_PLAYERS;
+      s.turn = (p + 1) % s.hands.length;
     }
     return s;
   }
@@ -154,32 +160,34 @@ export function applyMove(s, cards, cls = null) {
 export function autoSkip(s) {
   if (s.winner >= 0 || !s.trick) return [];
   const by = s.trick.by;
+  const n = s.hands.length;
   const pending = [];
-  for (let d = 1; d < NUM_PLAYERS; d++) {
-    const q = (by + d) % NUM_PLAYERS;
+  for (let d = 1; d < n; d++) {
+    const q = (by + d) % n;
     if (!s.passed[q]) pending.push(q);
   }
   for (const q of pending) {
-    const r = rulesFor(s.hands[q], s.hands[(q + 1) % NUM_PLAYERS].length, s.trick, false, 0);
+    const r = rulesFor(s.hands[q], s.hands[(q + 1) % n].length, s.trick, false, 0, n);
     if (legalPlays(s.hands[q], s.trick.cls, -1, r.singleKey).length) return [];
   }
   for (const q of pending) {
     if (s.history) s.history.push({ p: q, cards: null, trick: s.trick, auto: true });
   }
   s.trick = null;
-  s.passed = [false, false, false, false];
+  s.passed = s.passed.map(() => false);
   s.turn = by;
   return pending;
 }
 
 function advance(s) {
+  const n = s.hands.length;
   let q = s.turn;
   do {
-    q = (q + 1) % NUM_PLAYERS;
+    q = (q + 1) % n;
   } while (s.passed[q] && q !== s.trick.by);
   if (q === s.trick.by) {
     s.trick = null;
-    s.passed = [false, false, false, false];
+    s.passed = s.passed.map(() => false);
   }
   s.turn = q;
 }

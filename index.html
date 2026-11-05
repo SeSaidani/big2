@@ -15,28 +15,97 @@
   </head>
   <body class="solo">
     <header class="topbar">
-      <h1>Big Two <span>4 jokers wild</span></h1>
+      <h1>
+        <svg class="brand-logo" viewBox="0 0 266 64" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+          <g transform="translate(38 61) scale(0.4) translate(-150 -165)">
+            <g transform="rotate(-30 150 165)">
+              <rect
+                x="115"
+                y="22"
+                width="70"
+                height="98"
+                rx="8"
+                fill="#f7f3e8"
+                stroke="#000"
+                stroke-opacity="0.3"
+                stroke-width="3"
+              />
+              <g transform="translate(150 78) scale(1.9)" fill="#c8283c"><path d="M0-10 7 0 0 10-7 0Z" /></g>
+            </g>
+            <g transform="rotate(30 150 165)">
+              <rect
+                x="115"
+                y="22"
+                width="70"
+                height="98"
+                rx="8"
+                fill="#f6e7b0"
+                stroke="#000"
+                stroke-opacity="0.3"
+                stroke-width="3"
+              />
+              <path
+                transform="translate(150 72) scale(1.5)"
+                fill="#e0b43c"
+                stroke="#8a6a12"
+                stroke-width="1.6"
+                d="M0-18 5.3-6.2 18-5.6 8.2 2.6 11.2 15 0 8.4-11.2 15-8.2 2.6-18-5.6-5.3-6.2Z"
+              />
+            </g>
+            <rect
+              x="115"
+              y="14"
+              width="70"
+              height="98"
+              rx="8"
+              fill="#fffdf6"
+              stroke="#000"
+              stroke-opacity="0.35"
+              stroke-width="3"
+            />
+            <g transform="translate(150 66) scale(2.1)" fill="#1b1b1f">
+              <path
+                d="M0-10C-14 0-10.5 8.5-3 5.2-3.2 8.2-4.2 10-6.4 10h12.8C4.2 10 3.2 8.2 3 5.2 10.5 8.5 14 0 0-10Z"
+              />
+            </g>
+          </g>
+          <text
+            x="82"
+            y="37"
+            font-family="Georgia, 'Times New Roman', serif"
+            font-size="30"
+            font-weight="700"
+            letter-spacing="2"
+            fill="#f7f3e8"
+          >
+            BIG
+            <tspan fill="#e0b43c">TWO</tspan>
+          </text>
+          <text x="83" y="54" font-family="system-ui, sans-serif" font-size="11" letter-spacing="2.6" fill="#9fc3ad">
+            4 JOKERS WILD
+          </text>
+        </svg>
+        <span class="sr-only">Big Two, 4 jokers wild</span>
+      </h1>
       <div class="controls">
         <div class="mode" role="group" aria-label="Mode">
           <button type="button" id="modeSolo" class="seg active">Solo</button>
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
-        <label class="solo-only"
-          >AI
-          <select id="level">
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-        </label>
         <span id="record" class="record solo-only"></span>
-        <span id="who" class="record online-only"></span>
-        <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
-        <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
-        <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
-        <button type="button" id="logoutBtn" class="ghost online-only" hidden>Log out</button>
+        <span id="soloChip" class="chip solo-only" title="The settings of this game"></span>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
+      <button type="button" id="helpBtn" class="ghost help-btn" title="How to play" aria-label="How to play">?</button>
+      <details id="account" class="account" hidden>
+        <summary id="who" aria-label="Account menu"></summary>
+        <div class="menu">
+          <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
+          <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
+          <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
+          <button type="button" id="logoutBtn" class="ghost">Log out</button>
+        </div>
+      </details>
     </header>
 
     <div class="layout">
@@ -74,11 +143,15 @@
         <div id="lobbyHome" class="lobby-grid">
           <section class="panel-card">
             <h2>Play online</h2>
-            <p class="muted">
-              Signed in as <b id="lobbyUser"></b>. One game runs at a time; empty seats are played by the computer.
-            </p>
             <div id="gameBox"></div>
             <div class="row" id="createRow" hidden>
+              <label
+                >Players
+                <select id="newSeats">
+                  <option value="4" selected>4</option>
+                  <option value="3">3</option>
+                </select>
+              </label>
               <label
                 >AI level
                 <select id="newLevel">
@@ -336,6 +409,126 @@
       </div>
     </dialog>
 
+    <dialog id="helpDlg" class="help">
+      <button type="button" id="helpX" class="ghost dialog-x" aria-label="Close" title="Close">×</button>
+      <h2>How to play</h2>
+      <h3>The aim</h3>
+      <p>Be the first to get rid of all your cards. Everyone else pays you for the cards they are left holding.</p>
+      <h3>The cards</h3>
+      <p>
+        56 cards: a standard deck plus 4 wild jokers. Ranks run 3 (lowest) up to K, A and 2 (highest). Suits run ♦ &lt;
+        ♣ &lt; ♥ &lt; ♠. With 4 players everyone gets 14 cards. With 3 players everyone gets 18, and the 2 spare cards
+        go to whoever holds the 3♦ and whoever holds the 2♠ (so they start with 19, or one player with 20).
+      </p>
+      <h3>Playing</h3>
+      <ul>
+        <li>The holder of the 3♦ opens with a play that includes it.</li>
+        <li>
+          After that, play the same kind of hand as the last play, but higher: a single, a pair, a triple or five cards.
+        </li>
+        <li>
+          Five-card hands rank: straight, flush, full house, four of a kind (plus any card), straight flush, five of a
+          kind. A straight counts by its highest card. In A-2-3-4-5 and 2-3-4-5-6 the ace and the 2 are low, and these
+          are the two weakest straights.
+        </li>
+        <li>
+          You may pass at any time, even when you have the lead. Once you pass on a trick you are out of it until it
+          starts again. If nobody left can beat a play, the others are passed for you automatically.
+        </li>
+        <li>If the next player has one card left, a single you play must be your highest.</li>
+      </ul>
+      <h3>Jokers</h3>
+      <p>
+        A joker stands for any card that makes your hand strongest. A real card always beats a joker standing for the
+        same thing, so nothing beats the real 2♠. A lone joker counts as a 2♠ but loses to the real one.
+      </p>
+      <h3>Scoring</h3>
+      <p>
+        When someone goes out, each of the others pays them their number of cards left times a rate that grows with the
+        count. Going out with a straight flush or five of a kind doubles every payment. Points always add up to zero.
+      </p>
+      <table class="rates">
+        <thead>
+          <tr>
+            <th scope="col">Cards left (4 players)</th>
+            <th scope="col">Rate per card</th>
+            <th scope="col">Cards left (3 players)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1 to 7</td>
+            <td>1</td>
+            <td>1 to 9</td>
+          </tr>
+          <tr>
+            <td>8 to 10</td>
+            <td>2</td>
+            <td>10 to 13</td>
+          </tr>
+          <tr>
+            <td>11 to 13</td>
+            <td>3</td>
+            <td>14 to 17</td>
+          </tr>
+          <tr>
+            <td>14</td>
+            <td>4</td>
+            <td>18 to 20</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>Solo</h3>
+      <p>
+        Play against the computer. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The settings are
+        fixed for the whole game.
+      </p>
+      <h3>Online</h3>
+      <ul>
+        <li>One game runs at a time. An admin creates it, and only an admin can cancel it.</li>
+        <li>Seats nobody takes are played by the computer at the level the admin chose.</li>
+        <li>
+          Leaving to the lobby keeps your seat. Nobody is timed out: if a player is away, the game waits for them.
+        </li>
+        <li>Chat appears once two or more people are at the table.</li>
+        <li>
+          Where the server has texting switched on, you get a text when it is your turn, to the mobile number on your
+          account.
+        </li>
+        <li>
+          The leaderboard adds up points over a season. Games with computer players are scored on their own board.
+        </li>
+      </ul>
+      <div class="row">
+        <button type="button" id="helpClose" class="primary">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="newGameDlg">
+      <h2>New game</h2>
+      <p class="muted">The settings are fixed for the whole game. To change them, start another one.</p>
+      <div class="field">
+        <label for="ngPlayers">Players</label>
+        <select id="ngPlayers">
+          <option value="4">4 players</option>
+          <option value="3">3 players</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ngLevel">Computer level</label>
+        <select id="ngLevel">
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </div>
+      <p id="ngWarn" class="bad" hidden>This replaces the game you are playing.</p>
+      <div class="row">
+        <button type="button" id="ngStart" class="primary">Start</button>
+        <button type="button" id="ngCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
     <dialog id="pwDlg">
       <h2>Change your password</h2>
       <div class="field">
@@ -350,40 +543,6 @@
       <div class="row">
         <button type="button" id="pwOk" class="primary">Change password</button>
         <button type="button" id="pwCancel" class="ghost">Cancel</button>
-      </div>
-    </dialog>
-
-    <dialog id="loginDlg">
-      <h2>Sign in to play online</h2>
-      <p id="loginHelp" class="muted">Accounts are created by an admin. Enter the name and password you were given.</p>
-      <div class="field">
-        <label for="loginName">Name</label><input type="text" id="loginName" autocomplete="username" maxlength="20" />
-      </div>
-      <div class="field">
-        <label for="loginPw">Password</label
-        ><input id="loginPw" type="password" autocomplete="current-password" maxlength="200" />
-      </div>
-      <div class="field" id="loginCodeField" hidden>
-        <label for="loginCode">Code from the text message</label
-        ><input
-          id="loginCode"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          placeholder="123456"
-        />
-      </div>
-      <div class="field" id="loginPhoneField" hidden>
-        <label for="loginPhone">Mobile number, with country code (only to create an account)</label
-        ><input id="loginPhone" type="tel" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
-      </div>
-      <p id="loginErr" class="bad"></p>
-      <div class="row">
-        <button type="button" id="loginBtn" class="primary">Log in</button>
-        <button type="button" id="codeBtn" hidden>Text me a code</button>
-        <button type="button" id="registerBtn">Create account</button>
-        <button type="button" id="loginCancel" class="ghost">Cancel</button>
       </div>
     </dialog>
 

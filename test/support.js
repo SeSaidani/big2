@@ -192,14 +192,14 @@ export function driveEasy(client, ev, truthOf) {
 
 // An admin creates the game and `n - 1` other people join it. Returns the
 // clients in seat order (the admin first), each with an open event stream.
-export async function seatPlayers(ctx, prefix, n = 4, aiLevel = 'easy') {
+export async function seatPlayers(ctx, prefix, n = 4, aiLevel = 'easy', seats = 4) {
   const clients = [await makeUser(ctx, `${prefix}1`, { isAdmin: true })];
   for (let i = 2; i <= n; i++) clients.push(await makeUser(ctx, `${prefix}${i}`));
   for (const c of clients) {
     c.ev = c.openEvents();
     await c.ev.waitFor((m) => m.event === 'lobby');
   }
-  const created = await clients[0].req('POST', '/api/game', { aiLevel });
+  const created = await clients[0].req('POST', '/api/game', { aiLevel, seats });
   assert.equal(created.status, 201, JSON.stringify(created.json));
   for (const c of clients.slice(1)) assert.equal((await c.req('POST', '/api/game/join')).status, 200);
   return clients;

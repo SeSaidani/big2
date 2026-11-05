@@ -4,6 +4,7 @@
 
 import crypto from 'node:crypto';
 import { LEVELS } from '../src/ai/agents.js';
+import { PLAYER_COUNTS, NUM_PLAYERS } from '../src/cards.js';
 import { Table, TableError } from './table.js';
 import { saveLive, loadLive, clearLive } from './db.js';
 
@@ -42,14 +43,15 @@ export class Lobby {
     return { game: this.table ? this.table.summary() : null };
   }
 
-  create(user, aiLevel = 'medium') {
+  create(user, aiLevel = 'medium', seats = NUM_PLAYERS) {
     if (!user.isAdmin) throw new TableError(403, 'Only an admin can create a game.');
     if (!LEVELS.includes(aiLevel)) throw new TableError(400, 'Unknown AI level.');
+    if (!PLAYER_COUNTS.includes(seats)) throw new TableError(400, 'A game has 3 or 4 players.');
     if (this.table && this.table.status !== 'done') {
       throw new TableError(409, 'A game is already in progress. Only one game can run at a time.');
     }
     if (this.table) this.table.close(); // a finished round's results screen
-    const t = new Table(crypto.randomBytes(4).toString('hex'), user, aiLevel, this.tableDeps);
+    const t = new Table(crypto.randomBytes(4).toString('hex'), user, aiLevel, this.tableDeps, seats);
     this.table = t;
     this.#persist(t);
     this.deps.hub.broadcast('lobby', this.summary());

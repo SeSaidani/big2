@@ -64,7 +64,8 @@ export function sampleDeterminizations(view, rng, count, tries = 12) {
   for (const c of view.played) known[c] = 1;
   const pool = [];
   for (let c = 0; c < DECK_SIZE; c++) if (!known[c]) pool.push(c);
-  const opps = [1, 2, 3].map((d) => (view.me + d) % 4);
+  const n = view.counts.length;
+  const opps = Array.from({ length: n - 1 }, (_, i) => (view.me + 1 + i) % n);
   const need = opps.reduce((n, p) => n + view.counts[p], 0);
   if (need !== pool.length) throw new Error(`Unseen ${pool.length} != opponent cards ${need}`);
   const events = passEvents(view);

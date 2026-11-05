@@ -126,12 +126,27 @@ const sha = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 export function createSession(db, userId, ttlMs, now = Date.now()) {
   const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare('INSERT INTO sessions (token_sha256, user_id, expires) VALUES (?, ?, ?)').run(
+  db.prepare('INSERT INTO sessions (token_sha256, user_id, expires, created) VALUES (?, ?, ?, ?)').run(
     sha(token),
     userId,
     now + ttlMs,
+    now,
   );
   return token;
+}
+
+// A session lives ttlMs from its last use, never longer than maxMs from when it began. Renewing
+// costs a write, so it happens only once less than half the lifetime is left. Returns the new
+// expiry (ms), or null when the session was left as it is.
+export function renewSession(db, token, ttlMs, maxMs, now = Date.now()) {
+  if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null;
+  const row = db.prepare('SELECT expires, created FROM sessions WHERE token_sha256 = ?').get(sha(token));
+  if (!row || row.expires <= now || row.expires - now >= ttlMs / 2) return null;
+  const began = row.created || row.expires - ttlMs; // sessions from before `created` existed
+  const expires = Math.min(now + ttlMs, began + maxMs);
+  if (expires <= row.expires) return null;
+  db.prepare('UPDATE sessions SET expires = ? WHERE token_sha256 = ?').run(expires, sha(token));
+  return expires;
 }
 
 export function getSession(db, token, now = Date.now()) {
