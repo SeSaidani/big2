@@ -145,6 +145,39 @@ async function main() {
   );
   await A.shot('2-waiting-chat');
 
+  // Chat on a phone: the side panel is a sheet there, so the waiting room has its own Chat button.
+  await B.phone(390, 844);
+  await sleep(300);
+  check(
+    'on a phone the waiting room offers a Chat button now that chat is on',
+    await B.ev(
+      `!document.getElementById('waitLogBtn').hidden && getComputedStyle(document.getElementById('waitLogBtn')).display !== 'none'`,
+    ),
+  );
+  check(
+    'and the chat itself is off the screen until it is opened',
+    !(await B.ev(`document.body.classList.contains('log-open')`)),
+  );
+  await A.ev(
+    `document.getElementById('chatInput').value = 'ping for the phone'; document.getElementById('chatSend').click()`,
+  );
+  await B.waitFor(
+    `document.getElementById('waitLogBtn').classList.contains('unread')`,
+    8000,
+    'an unread mark on the Chat button',
+  );
+  check('a message from someone else marks the Chat button as unread', true);
+  await B.click('waitLogBtn');
+  check(
+    'opening it shows the chat, including that message, and clears the mark',
+    await B.ev(
+      `document.body.classList.contains('log-open') && !document.getElementById('chat').hidden && document.getElementById('chatMsgs').textContent.includes('ping for the phone') && !document.getElementById('waitLogBtn').classList.contains('unread')`,
+    ),
+  );
+  await B.click('logToggle');
+  await B.desktop();
+  await sleep(200);
+
   // --- play, with a lobby round-trip and a hard server restart in the middle ---
   await A.click('startBtn');
   await Promise.all(

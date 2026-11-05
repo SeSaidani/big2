@@ -132,6 +132,15 @@
             <button type="button" id="passBtn" title="P">Pass</button>
             <button type="button" id="clearBtn" class="ghost" title="Esc">Clear</button>
             <button type="button" id="sortBtn" class="ghost">Sort: rank</button>
+            <button
+              type="button"
+              id="logBtn"
+              class="ghost compact-only log-btn"
+              aria-controls="log"
+              aria-expanded="false"
+            >
+              Log
+            </button>
             <button type="button" id="leaveBtn" class="ghost online-only" title="Your seat is kept until the game ends">
               Back to lobby
             </button>
@@ -205,6 +214,9 @@
           <div class="row">
             <button type="button" id="startBtn" class="primary">Start game</button>
             <button type="button" id="waitLeave">Leave table</button>
+            <button type="button" id="waitLogBtn" class="ghost compact-only log-btn" aria-controls="log" hidden>
+              Chat
+            </button>
           </div>
           <p id="waitMsg" class="bad"></p>
         </section>

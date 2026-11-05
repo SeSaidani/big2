@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { maskPhone } from './phone-format.js';
+import { DECK_SIZE } from '../src/cards.js';
 
 const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -88,6 +89,22 @@ CREATE TABLE IF NOT EXISTS sms_log (
   sent INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS sms_log_user ON sms_log(user_id, kind, sent);
+-- What a finished game was dealt and how it was played, so it can be studied or replayed
+-- later. One row per seat, and one per move (cards is a JSON array, NULL for a pass).
+CREATE TABLE IF NOT EXISTS game_deals (
+  game_id INTEGER NOT NULL REFERENCES games(id),
+  seat INTEGER NOT NULL,
+  hand TEXT NOT NULL,
+  PRIMARY KEY (game_id, seat)
+);
+CREATE TABLE IF NOT EXISTS game_moves (
+  game_id INTEGER NOT NULL REFERENCES games(id),
+  ply INTEGER NOT NULL,
+  seat INTEGER NOT NULL,
+  cards TEXT,
+  auto INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (game_id, ply)
+);
 -- The one live table (waiting, playing or just finished), so a game survives
 -- a server restart. At most one row.
 CREATE TABLE IF NOT EXISTS live_game (
@@ -120,6 +137,8 @@ function migrate(db) {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone) WHERE phone IS NOT NULL');
   // 'finished' games score; 'cancelled' ones (an admin ended them) never do.
   addColumn(db, 'games', 'status', "TEXT NOT NULL DEFAULT 'finished'");
+  // 3 or 4. NULL for games saved before this column existed (their results rows give the count).
+  addColumn(db, 'games', 'players', 'INTEGER');
   // Every database has a first season, so there is always something to rank.
   // Existing games all fall inside it (it starts at the earliest one).
   if (db.prepare('SELECT COUNT(*) AS n FROM seasons').get().n === 0) {
@@ -139,24 +158,80 @@ export function openDb(file = ':memory:') {
 
 // ---- games and scores ----
 
+const isCardId = (c) => Number.isInteger(c) && c >= 0 && c < DECK_SIZE;
+const MAX_MOVES = 5000;
+
+// Returns why a game record cannot be saved, or null if it can: every card dealt exactly once,
+// and every move by a real seat with real cards.
+export function recordProblem(record, players) {
+  const { deals, moves } = record || {};
+  if (!Array.isArray(deals) || deals.length !== players) return 'one deal per seat is needed';
+  const seen = new Set();
+  for (const hand of deals) {
+    if (!Array.isArray(hand) || !hand.every(isCardId)) return 'a deal holds something that is not a card';
+    for (const c of hand) {
+      if (seen.has(c)) return `card ${c} was dealt twice`;
+      seen.add(c);
+    }
+  }
+  if (seen.size !== DECK_SIZE) return `${seen.size} cards were dealt, not ${DECK_SIZE}`;
+  if (!Array.isArray(moves) || moves.length > MAX_MOVES) return 'the move log is missing or too long';
+  for (const m of moves) {
+    const okSeat = m && Number.isInteger(m.seat) && m.seat >= 0 && m.seat < players;
+    const okCards =
+      m && (m.cards === null || (Array.isArray(m.cards) && m.cards.length > 0 && m.cards.every(isCardId)));
+    if (!okSeat || !okCards) return 'the move log holds a bad move';
+  }
+  return null;
+}
+
 // seats: [{ userId|null, cardsLeft, delta }] indexed by seat. One transaction,
 // so a game is either fully recorded or not at all; deltas must sum to zero.
-export function recordGame(db, { started, ended, hasAi, multiplier, seats }) {
+// record (optional): { deals, moves } as made by initialDeals and moveLog, saved in the same
+// transaction (see recordProblem; callers check it first so a bad record never costs a score).
+export function recordGame(db, { started, ended, hasAi, multiplier, seats, record }) {
   if (seats.reduce((a, s) => a + s.delta, 0) !== 0) throw new Error('Scores must sum to zero');
+  if (record) {
+    const problem = recordProblem(record, seats.length);
+    if (problem) throw new Error(`Bad game record: ${problem}`);
+  }
   db.exec('BEGIN IMMEDIATE');
   try {
     const g = db
-      .prepare("INSERT INTO games (started, ended, has_ai, multiplier, status) VALUES (?, ?, ?, ?, 'finished')")
-      .run(started, ended, hasAi ? 1 : 0, multiplier);
+      .prepare(
+        "INSERT INTO games (started, ended, has_ai, multiplier, status, players) VALUES (?, ?, ?, ?, 'finished', ?)",
+      )
+      .run(started, ended, hasAi ? 1 : 0, multiplier, seats.length);
     const gameId = Number(g.lastInsertRowid);
     const ins = db.prepare('INSERT INTO results (game_id, seat, user_id, cards_left, delta) VALUES (?, ?, ?, ?, ?)');
     seats.forEach((s, seat) => ins.run(gameId, seat, s.userId, s.cardsLeft, s.delta));
+    if (record) {
+      const insDeal = db.prepare('INSERT INTO game_deals (game_id, seat, hand) VALUES (?, ?, ?)');
+      record.deals.forEach((hand, seat) => insDeal.run(gameId, seat, JSON.stringify(hand)));
+      const insMove = db.prepare('INSERT INTO game_moves (game_id, ply, seat, cards, auto) VALUES (?, ?, ?, ?, ?)');
+      record.moves.forEach((m, ply) =>
+        insMove.run(gameId, ply, m.seat, m.cards ? JSON.stringify(m.cards) : null, m.auto ? 1 : 0),
+      );
+    }
     db.exec('COMMIT');
     return gameId;
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
   }
+}
+
+// A saved game's deal and moves, or null for a game with no record (saved before records existed,
+// or whose record could not be saved).
+export function loadGameRecord(db, gameId) {
+  const game = db.prepare('SELECT players FROM games WHERE id = ?').get(gameId);
+  const dealRows = db.prepare('SELECT hand FROM game_deals WHERE game_id = ? ORDER BY seat').all(gameId);
+  if (!game || !dealRows.length) return null;
+  const moves = db
+    .prepare('SELECT seat, cards, auto FROM game_moves WHERE game_id = ? ORDER BY ply')
+    .all(gameId)
+    .map((m) => ({ seat: m.seat, cards: m.cards === null ? null : JSON.parse(m.cards), auto: m.auto === 1 }));
+  return { players: game.players ?? dealRows.length, deals: dealRows.map((r) => JSON.parse(r.hand)), moves };
 }
 
 // A game an admin ended: kept for the record, but with no results rows, so it

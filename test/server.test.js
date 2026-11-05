@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { chooseMove } from '../src/ai/agents.js';
 import { mulberry32 } from '../src/cards.js';
-import { loadLive, openDb } from '../server/db.js';
+import { loadLive, openDb, loadGameRecord } from '../server/db.js';
+import { replayRecord } from '../src/game.js';
 import {
   PASSWORD,
   boot,
@@ -22,6 +23,17 @@ import {
 } from './support.js';
 
 const tableOf = (ctx) => ctx.app.lobby.table;
+
+// The newest finished game must have been saved with its deal and moves, and replay to the same win.
+function assertRecordReplays(ctx, players, winner) {
+  const id = ctx.app.db.prepare("SELECT id FROM games WHERE status = 'finished' ORDER BY id DESC LIMIT 1").get().id;
+  const rec = loadGameRecord(ctx.app.db, id);
+  assert.ok(rec, 'the game was saved with a record');
+  assert.equal(rec.players, players);
+  assert.equal(rec.deals.flat().length, 56);
+  assert.ok(rec.moves.some((m) => m.cards) && rec.moves.length > players);
+  assert.equal(replayRecord(rec).winner, winner);
+}
 
 test('accounts: registration is closed by default; opened by the admin it works', async () => {
   const ctx = await boot();
@@ -231,6 +243,7 @@ test('four humans play a full game: no view leaks a hand, result is zero-sum and
     assert.equal(r.saved, true);
     for (const f of finals) assert.deepEqual(f.data.result, r);
     assert.equal(finals[0].data.hands[r.winner].length, 0);
+    assertRecordReplays(ctx, 4, r.winner);
 
     assert.equal(ctx.app.db.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished'").get().n, 1);
     assert.equal(ctx.app.db.prepare('SELECT SUM(delta) AS s FROM results').get().s, 0);
@@ -266,6 +279,7 @@ test('three humans at a table of three play a full game: view and result have th
     assert.equal(r.saved, true);
     assert.equal(finals[0].data.hands.length, 3);
     assert.equal(finals[0].data.hands[r.winner].length, 0);
+    assertRecordReplays(ctx, 3, r.winner);
     assert.equal(ctx.app.db.prepare('SELECT COUNT(*) AS n FROM results').get().n, 3);
     assert.equal(ctx.app.db.prepare('SELECT SUM(delta) AS s FROM results').get().s, 0);
     assert.deepEqual(ctx.logs, []);
@@ -552,6 +566,8 @@ test('a running game survives a server restart and carries on to a scored finish
     const done = await back.ev.waitFor(isDone, 30000);
     assert.deepEqual(back.errors, []);
     assert.equal(done.data.result.saved, true);
+    // The moves made before the restart survive in the saved game, so the record is whole.
+    assertRecordReplays(ctx, 4, done.data.result.winner);
     assert.equal(ctx.app.db.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished'").get().n, 1);
   } finally {
     await ctx.app.close();

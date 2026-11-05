@@ -530,17 +530,35 @@ $('helpBtn').addEventListener('click', () => {
 $('helpClose').addEventListener('click', () => $('helpDlg').close());
 $('helpX').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
-// The play log can be folded away. It starts folded on a phone, where the table needs the room.
+// The play log (and the chat under it). Beside the table it can be folded away. On a phone there is
+// no room beside the table, so it is a sheet over it: the Log button opens it, the × closes it.
 const logPanel = document.querySelector('.log');
+const LOG_SHEET = window.matchMedia('(max-width: 700px), (orientation: landscape) and (max-height: 520px)');
+const logWanted = () => (LOG_SHEET.matches ? false : (localStorage.getItem('big2.log') || 'open') === 'open');
+const logIsOpen = () =>
+  LOG_SHEET.matches ? document.body.classList.contains('log-open') : !logPanel.classList.contains('collapsed');
+const LOG_OPENERS = ['logBtn', 'waitLogBtn']; // at the table, and in the waiting room (where chat is all there is)
 function setLogOpen(open) {
-  logPanel.classList.toggle('collapsed', !open);
+  const sheet = LOG_SHEET.matches;
+  logPanel.classList.toggle('collapsed', !sheet && !open);
+  document.body.classList.toggle('log-open', sheet && open);
   $('logToggle').setAttribute('aria-expanded', String(open));
+  for (const id of LOG_OPENERS) $(id).setAttribute('aria-expanded', String(sheet && open));
+  if (sheet && open) {
+    for (const id of LOG_OPENERS) $(id).classList.remove('unread');
+    $('log').scrollTop = $('log').scrollHeight;
+  }
 }
-setLogOpen((localStorage.getItem('big2.log') || (PHONE.matches ? 'closed' : 'open')) === 'open');
+setLogOpen(logWanted());
+LOG_SHEET.addEventListener('change', () => setLogOpen(logWanted()));
 $('logToggle').addEventListener('click', () => {
-  const open = logPanel.classList.contains('collapsed');
+  const open = !logIsOpen();
   setLogOpen(open);
-  localStorage.setItem('big2.log', open ? 'open' : 'closed');
+  if (!LOG_SHEET.matches) localStorage.setItem('big2.log', open ? 'open' : 'closed');
+});
+for (const id of LOG_OPENERS) $(id).addEventListener('click', () => setLogOpen(true));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && LOG_SHEET.matches && logIsOpen()) setLogOpen(false);
 });
 document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || ['SELECT', 'INPUT'].includes(e.target.tagName)) return;
@@ -646,6 +664,10 @@ function openStream() {
     onTable,
     onChat: (m) => {
       if (!chatMsgs.some((x) => x.id === m.id)) chatMsgs.push(m);
+      // A message from someone else while the sheet is shut: mark the Log button.
+      if (LOG_SHEET.matches && !logIsOpen() && user && m.name !== user.name) {
+        for (const id of LOG_OPENERS) $(id).classList.add('unread');
+      }
       renderChat();
     },
     onChatHistory: (history) => {
@@ -1071,6 +1093,10 @@ async function sendMove(cards) {
 function renderChat() {
   const on = mode === 'online' && !!table && table.chatEnabled;
   show('chat', on);
+  // The opener says "Chat" when there is chat (the thing people look for); the sheet holds both.
+  $('logBtn').firstChild.textContent = on ? 'Chat' : 'Log';
+  $('logToggle').firstChild.textContent = on ? 'Play log & chat' : 'Play log';
+  $('waitLogBtn').hidden = !on;
   if (!on) return;
   const ol = $('chatMsgs');
   const atBottom = ol.scrollTop + ol.clientHeight >= ol.scrollHeight - 24;
