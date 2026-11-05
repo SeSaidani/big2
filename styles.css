@@ -937,14 +937,17 @@ button.seg.active {
   border-bottom: 1px solid rgb(255 255 255 / 7%);
 }
 
-table.lb {
+table.lb,
+table.ls {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
 
 table.lb th,
-table.lb td {
+table.lb td,
+table.ls th,
+table.ls td {
   text-align: right;
   padding: 5px 6px;
   border-bottom: 1px solid rgb(255 255 255 / 7%);
@@ -955,7 +958,38 @@ table.lb td:nth-child(2) {
   text-align: left;
 }
 
-table.lb th {
+table.ls th:first-child,
+table.ls td:first-child {
+  text-align: left;
+}
+
+/* The luck-and-skill table has wider cells than a phone has room for: it scrolls inside its card. */
+.ls-scroll {
+  overflow-x: auto;
+}
+
+table.ls td {
+  white-space: nowrap;
+}
+
+/* On a phone, drop Wins and Expected wins (Wins vs expected says the same thing) so the rest fits without scrolling. */
+@media (max-width: 700px) {
+  table.ls th:nth-child(3),
+  table.ls td:nth-child(3),
+  table.ls th:nth-child(4),
+  table.ls td:nth-child(4) {
+    display: none;
+  }
+
+  table.ls th,
+  table.ls td {
+    padding: 5px 4px;
+    font-size: 0.85rem;
+  }
+}
+
+table.lb th,
+table.ls th {
   color: var(--muted);
   font-weight: 500;
   font-size: 0.85rem;

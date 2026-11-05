@@ -49,6 +49,7 @@ let chatMsgs = [];
 let lbKind = 'human';
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
+let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
 let editingSeason = null;
 
 // ---------- AI worker ----------
@@ -864,11 +865,77 @@ async function refreshSeasons() {
   sel.value = lbSeason;
 }
 
+// "+1.2" or "−3" (a real minus sign, as on the result panel).
+const signed = (v, digits) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(digits)}`;
+
+// The luck-and-skill view: the same season and board as the standings.
+async function refreshStats(seq) {
+  const body = $('lsBody');
+  const note = (text) => ($('lsNote').textContent = text);
+  const message = (text) => {
+    body.innerHTML = '';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'muted';
+    td.textContent = text;
+    tr.appendChild(td);
+    body.appendChild(tr);
+  };
+  try {
+    const { season, rows, minGames, pending } = await api.stats(lbKind, lbSeason);
+    if (seq !== lbSeq) return;
+    if (!season) $('lbSeasonInfo').textContent = 'No season is running right now. Pick a past season, or All-time.';
+    else if (season.id === null) {
+      $('lbSeasonInfo').textContent = 'All-time: every game ever played, across all seasons.';
+    } else {
+      $('lbSeasonInfo').textContent =
+        `${season.name}: ${fmtRange(season)}. Games count in the season they finished in.`;
+    }
+    note(
+      pending > 0
+        ? `Still working out ${pending} game${pending === 1 ? '' : 's'}: look again in a moment.`
+        : `Shown from ${minGames} games. Only games saved with their deals count (the "of" column shows how many of a player's games that is).`,
+    );
+    if (!rows.length) return message(season ? 'No games with their deals saved yet.' : '');
+    body.innerHTML = '';
+    for (const r of rows) {
+      const games = r.played > r.games ? `${r.games} of ${r.played}` : String(r.games);
+      const cells = r.ready
+        ? [
+            r.name,
+            games,
+            r.wins,
+            r.expWins.toFixed(1),
+            `${signed(r.winsAbove, 1)} ± ${(1.96 * r.winsSe).toFixed(1)}`,
+            signed(r.luck, 0),
+            `${signed(r.play, 0)} ± ${(1.96 * r.playSe).toFixed(0)}`,
+          ]
+        : [r.name, games, '—', '—', '—', '—', `needs ${minGames - r.games} more`];
+      const tr = document.createElement('tr');
+      for (const v of cells) {
+        const td = document.createElement('td');
+        td.textContent = v;
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+  } catch {
+    if (seq === lbSeq) body.innerHTML = '';
+  }
+}
+
 async function refreshLeaderboard() {
   const body = $('lbBody');
   const seq = ++lbSeq;
   $('lbHuman').classList.toggle('active', lbKind === 'human');
   $('lbAi').classList.toggle('active', lbKind === 'ai');
+  $('lbViewStandings').classList.toggle('active', lbView === 'standings');
+  $('lbViewStats').classList.toggle('active', lbView === 'stats');
+  show('lbStandings', lbView === 'standings');
+  show('lsBox', lbView === 'stats');
+  show('lbSort', lbView === 'standings');
+  if (lbView === 'stats') return refreshStats(seq);
   $('lbSort').textContent = `Ranked by: ${lbSort === 'perGame' ? 'points per game' : 'total points'}`;
   const note = (text) => {
     body.innerHTML = '';
@@ -1553,6 +1620,14 @@ $('lbSeason').addEventListener('change', (e) => {
 });
 $('lbSort').addEventListener('click', () => {
   lbSort = lbSort === 'points' ? 'perGame' : 'points';
+  refreshLeaderboard();
+});
+$('lbViewStandings').addEventListener('click', () => {
+  lbView = 'standings';
+  refreshLeaderboard();
+});
+$('lbViewStats').addEventListener('click', () => {
+  lbView = 'stats';
   refreshLeaderboard();
 });
 $('lbHuman').addEventListener('click', () => {

@@ -150,7 +150,8 @@ src/            cards, hands (classification and ranking), moves (legal-move gen
                 scoring, ui.js (browser UI), online.js (API client), online-view.js (server view -> UI state)
 src/ai/         easy (greedy), medium (heuristic planner), hard (determinised Monte Carlo tree search), worker
 server/         index.js (HTTP, SSE, admin API), table.js, lobby.js, auth.js, db.js, hub.js, ai-pool.js, admin.js (CLI)
-tools/          arena.js (headless AI tournaments)
+src/stats/      the deal model: features, statistics, and the fitted models (see docs/deal-model.md)
+tools/          arena.js (headless AI tournaments), fit-deal-model.js (fits the deal model)
 test/           node --test suites
 ```
 

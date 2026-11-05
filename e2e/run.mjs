@@ -8,7 +8,13 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let failed = 0;
-for (const script of ['two-players.mjs', 'seasons-and-phone.mjs', 'phone-verification.mjs', 'three-players.mjs']) {
+for (const script of [
+  'two-players.mjs',
+  'seasons-and-phone.mjs',
+  'phone-verification.mjs',
+  'three-players.mjs',
+  'luck-and-skill.mjs',
+]) {
   console.log(`\n=== ${script} ===`);
   const r = spawnSync(process.execPath, [path.join(here, script), ...process.argv.slice(2)], { stdio: 'inherit' });
   if (r.status !== 0) failed++;

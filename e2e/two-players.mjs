@@ -261,6 +261,40 @@ async function main() {
   );
   await A.shot('5-leaderboard');
 
+  // Luck & skill: the same two players with one game each, below the 10-game minimum, so no figures yet.
+  await A.click('lbViewStats');
+  await A.waitFor(
+    `[...document.querySelectorAll('#lsBody tr')].some(r => r.children[0] && r.children[0].textContent === 'boss')`,
+    8000,
+    'luck and skill rows',
+  );
+  const ls = await A.ev(
+    `[...document.querySelectorAll('#lsBody tr')].map(r => [...r.children].map(c => c.textContent))`,
+  );
+  check(
+    'Luck & skill lists both humans with one game and says how many more are needed',
+    ['boss', 'alice'].every((n) => ls.some((r) => r[0] === n && r[1] === '1' && r[6] === 'needs 9 more')),
+    JSON.stringify(ls),
+  );
+  check(
+    'the standings table is out of the way while it shows',
+    await A.ev(`document.getElementById('lbStandings').hidden && !document.getElementById('lsBox').hidden`),
+  );
+  const priced = await A.ev(`fetch('/api/stats?kind=ai').then(r => r.json())`);
+  check(
+    'the server priced that game: real win chances, nothing left waiting',
+    priced.pending === 0 &&
+      priced.rows.length === 2 &&
+      priced.rows.every((r) => r.expWins > 0 && r.expWins < 1 && r.games === 1 && r.ready === false),
+    JSON.stringify(priced.rows.map((r) => [r.name, r.expWins.toFixed(3)])),
+  );
+  await A.shot('5b-luck-skill');
+  await A.click('lbViewStandings');
+  check(
+    'the toggle goes back to the standings',
+    await A.ev(`!document.getElementById('lbStandings').hidden && document.getElementById('lsBox').hidden`),
+  );
+
   // --- a second game: an admin can create one now, and only an admin can cancel ---
   await A.waitFor(`!document.getElementById('createRow').hidden`, 8000, 'create row after a finished game');
   await B.click('endLeave');

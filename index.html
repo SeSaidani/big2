@@ -176,6 +176,10 @@
           <section class="panel-card">
             <h2>Leaderboard</h2>
             <div class="row">
+              <button type="button" id="lbViewStandings" class="seg active">Standings</button>
+              <button type="button" id="lbViewStats" class="seg">Luck &amp; skill</button>
+            </div>
+            <div class="row">
               <label class="grow"
                 >Season
                 <select id="lbSeason"></select
@@ -187,24 +191,50 @@
               <button type="button" id="lbSort" class="ghost">Ranked by: total points</button>
             </div>
             <p id="lbSeasonInfo" class="muted"></p>
-            <table class="lb">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Player</th>
-                  <th>Games</th>
-                  <th>Wins</th>
-                  <th>Win %</th>
-                  <th>Points</th>
-                  <th>Per game</th>
-                </tr>
-              </thead>
-              <tbody id="lbBody"></tbody>
-            </table>
-            <p class="muted">
-              Points are running totals (what you have won minus what you have paid). Games with computer players are
-              scored on their own board.
-            </p>
+            <div id="lbStandings">
+              <table class="lb">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Player</th>
+                    <th>Games</th>
+                    <th>Wins</th>
+                    <th>Win %</th>
+                    <th>Points</th>
+                    <th>Per game</th>
+                  </tr>
+                </thead>
+                <tbody id="lbBody"></tbody>
+              </table>
+              <p class="muted">
+                Points are running totals (what you have won minus what you have paid). Games with computer players are
+                scored on their own board.
+              </p>
+            </div>
+            <div id="lsBox" hidden>
+              <p class="muted">
+                How you did against what your cards were worth. <b>Deal luck</b> is the points your dealt hands were
+                worth on average; <b>Play</b> is the points you made beyond that. Both are measured against Medium-level
+                play from the same cards, and ± is a 95% range.
+              </p>
+              <div class="ls-scroll">
+                <table class="ls">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Games</th>
+                      <th>Wins</th>
+                      <th>Expected wins</th>
+                      <th>Wins vs expected</th>
+                      <th>Deal luck</th>
+                      <th>Play</th>
+                    </tr>
+                  </thead>
+                  <tbody id="lsBody"></tbody>
+                </table>
+              </div>
+              <p id="lsNote" class="muted"></p>
+            </div>
           </section>
         </div>
         <section id="waitRoom" class="panel-card" hidden>
@@ -490,6 +520,13 @@
           </tr>
         </tbody>
       </table>
+      <h3>Luck &amp; skill</h3>
+      <p>
+        In the leaderboard, the Luck &amp; skill view shows how each player did against what their dealt cards were
+        worth, so a run of good or bad hands is not mistaken for good or bad play. It compares you with Medium-level
+        play from the same cards, so it is a yardstick and not a measure of absolute skill. It needs 10 games before it
+        shows your figures, and counts only games saved with their deals.
+      </p>
       <h3>Solo</h3>
       <p>
         Play against the computer. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The settings are
