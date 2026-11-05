@@ -192,6 +192,37 @@ function advance(s) {
   s.turn = q;
 }
 
+// ---- the record of a finished game ----
+//
+// A game is saved as its deal and its move log, so it can be studied or replayed later.
+// Hands only shrink and every card a seat played is in the history, so a seat's deal is what it
+// still holds plus what it played (the winner holds nothing, the losers hold their leftovers).
+export function initialDeals(s) {
+  return s.hands.map((hand, seat) =>
+    [...hand, ...s.history.filter((e) => e.p === seat && e.cards).flatMap((e) => e.cards)].sort((a, b) => a - b),
+  );
+}
+
+// Every move in order: a play (cards), a pass (cards null) or an automatic pass (auto true).
+export function moveLog(s) {
+  return s.history.map((e) => ({ seat: e.p, cards: e.cards ? [...e.cards] : null, auto: !!e.auto }));
+}
+
+// Plays a saved game again from its deal and returns the final state. Automatic passes are not
+// applied from the log: they follow from the plays, exactly as when the game was played live.
+export function replayRecord({ deals, moves }) {
+  const s = newGame(() => 0, deals);
+  for (const m of moves) {
+    if (m.auto) continue;
+    if (m.seat !== s.turn) throw new Error(`Replay out of step: seat ${m.seat} moved on seat ${s.turn}'s turn`);
+    const err = validatePlay(s, m.cards);
+    if (err) throw new Error(`Replay found an illegal move: ${err}`);
+    applyMove(s, m.cards);
+    if (m.cards) autoSkip(s);
+  }
+  return s;
+}
+
 // What player p is allowed to know.
 export function observe(s, p) {
   return {

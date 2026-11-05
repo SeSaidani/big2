@@ -19,11 +19,13 @@ import {
   turnRules,
   legalMoves,
   checkInvariants,
+  initialDeals,
+  moveLog,
 } from '../src/game.js';
 import { classify } from '../src/hands.js';
 import { NUM_PLAYERS } from '../src/cards.js';
 import { scoreRound } from '../src/scoring.js';
-import { recordGame, recordCancelled } from './db.js';
+import { recordGame, recordCancelled, recordProblem } from './db.js';
 
 export class TableError extends Error {
   constructor(status, message) {
@@ -301,8 +303,17 @@ export class Table {
     const r = scoreRound(this.game);
     const hasAi = this.seats.some((s) => s.kind === 'ai');
     let saved = true;
+    // The deal and the moves are saved with the result. If they ever fail their own checks, the
+    // result is still saved (a score must never be lost to a bad record) and the problem is logged.
+    let record = { deals: initialDeals(this.game), moves: moveLog(this.game) };
+    const problem = recordProblem(record, this.seats.length);
+    if (problem) {
+      this.deps.log('Game record not saved', this.id, problem);
+      record = undefined;
+    }
     try {
       recordGame(this.deps.db, {
+        record,
         started: this.startedAt,
         ended: this.deps.cfg.now(),
         hasAi,
