@@ -6,7 +6,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { maskPhone } from './phone-format.js';
 import { DECK_SIZE } from '../src/cards.js';
 
 const SCHEMA = `
@@ -61,34 +60,28 @@ CREATE TABLE IF NOT EXISTS seasons (
   ends INTEGER,
   CHECK (ends IS NULL OR ends > starts)
 );
--- One pending phone-verification code per user (hashed; short-lived).
-CREATE TABLE IF NOT EXISTS phone_codes (
-  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  phone TEXT NOT NULL,
-  salt TEXT NOT NULL,
-  code_hash TEXT NOT NULL,
-  expires INTEGER NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0
-);
--- One pending sign-in code per user (hashed; short-lived). Kept apart from
--- phone_codes: that one proves a number, this one opens a session.
-CREATE TABLE IF NOT EXISTS login_codes (
-  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  salt TEXT NOT NULL,
-  code_hash TEXT NOT NULL,
-  expires INTEGER NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0
-);
--- Every text we try to send (never its content or the number): drives the
--- per-user cooldown and daily cap, and gives an audit trail of volume.
-CREATE TABLE IF NOT EXISTS sms_log (
+-- One row per device that has turned turn alerts on (a browser's push subscription). The endpoint is the
+-- address of that device at its push service; p256dh and auth are the keys messages to it are encrypted with.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  label TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  last_ok INTEGER
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user ON push_subscriptions(user_id);
+-- Every turn alert we try to send (never its content): says which turns have already been alerted,
+-- so a restart cannot repeat one, and bounds how many one person can get in a day.
+CREATE TABLE IF NOT EXISTS push_log (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   ok INTEGER NOT NULL,
   sent INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS sms_log_user ON sms_log(user_id, kind, sent);
+CREATE INDEX IF NOT EXISTS push_log_user ON push_log(user_id, sent);
 -- What a finished game was dealt and how it was played, so it can be studied or replayed
 -- later. One row per seat, and one per move (cards is a JSON array, NULL for a pass).
 CREATE TABLE IF NOT EXISTS game_deals (
@@ -132,29 +125,40 @@ function addColumn(db, table, column, ddl) {
   if (!have.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
 }
 
+// Text messages are gone (turn alerts are push notifications now), so the phone numbers and everything
+// that went with them are erased from a database that still has them. Safe to run every time.
+function dropPhoneData(db) {
+  db.exec('DROP INDEX IF EXISTS users_phone');
+  for (const table of ['phone_codes', 'login_codes', 'sms_log']) db.exec(`DROP TABLE IF EXISTS ${table}`);
+  const have = db
+    .prepare('PRAGMA table_info(users)')
+    .all()
+    .map((c) => c.name);
+  for (const column of ['phone', 'phone_verified', 'sms_enabled', 'sms_blocked']) {
+    if (have.includes(column)) db.exec(`ALTER TABLE users DROP COLUMN ${column}`);
+  }
+}
+
 function migrate(db) {
   addColumn(db, 'users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(db, 'users', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(db, 'users', 'last_login', 'INTEGER');
-  // Phone numbers (E.164). Required for every new account; NULL only for accounts
-  // that predate the rule, which are asked for one before they can join a game.
-  addColumn(db, 'users', 'phone', 'TEXT');
-  addColumn(db, 'users', 'phone_verified', 'INTEGER NOT NULL DEFAULT 0');
-  addColumn(db, 'users', 'sms_enabled', 'INTEGER NOT NULL DEFAULT 1');
-  addColumn(db, 'users', 'sms_blocked', 'INTEGER NOT NULL DEFAULT 0'); // the carrier says they opted out
   // When a session began, so a renewed one can still be capped (0 = began before this column existed).
   addColumn(db, 'sessions', 'created', 'INTEGER NOT NULL DEFAULT 0');
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone) WHERE phone IS NOT NULL');
   // 'finished' games score; 'cancelled' ones (an admin ended them) never do.
   addColumn(db, 'games', 'status', "TEXT NOT NULL DEFAULT 'finished'");
   // 3 or 4. NULL for games saved before this column existed (their results rows give the count).
   addColumn(db, 'games', 'players', 'INTEGER');
-  // Every database has a first season, so there is always something to rank.
-  // Existing games all fall inside it (it starts at the earliest one).
-  if (db.prepare('SELECT COUNT(*) AS n FROM seasons').get().n === 0) {
+  dropPhoneData(db);
+  // A new database starts with one season, so there is something to rank. Existing games all fall inside it
+  // (it starts at the earliest one). That happens once: after that, having no season is a choice an admin can
+  // make (no online game can start until they create one), so it must survive a restart.
+  const hasSeasons = db.prepare('SELECT COUNT(*) AS n FROM seasons').get().n > 0;
+  if (!hasSeasons && getSetting(db, 'seasons_seeded', '0') !== '1') {
     const first = db.prepare('SELECT MIN(ended) AS m FROM games').get().m;
     db.prepare('INSERT INTO seasons (name, starts, ends) VALUES (?, ?, NULL)').run('Season 1', first ?? Date.now());
   }
+  setSetting(db, 'seasons_seeded', '1');
 }
 
 export function openDb(file = ':memory:') {
@@ -331,9 +335,16 @@ function validateSeason(db, { name, starts, ends }, ignoreId = null) {
   if (end !== null && end <= starts) throw new SeasonError(400, 'The season must end after it starts.');
   // Ranges are [starts, ends): touching end-to-start is fine, overlapping is not.
   const clash = db
-    .prepare('SELECT name FROM seasons WHERE id IS NOT ? AND starts < ? AND ? < COALESCE(ends, ?)')
+    .prepare('SELECT name, ends FROM seasons WHERE id IS NOT ? AND starts < ? AND ? < COALESCE(ends, ?)')
     .get(ignoreId, end ?? FAR_FUTURE, starts, FAR_FUTURE);
-  if (clash) throw new SeasonError(409, `These dates overlap "${clash.name}".`);
+  if (clash) {
+    throw new SeasonError(
+      409,
+      clash.ends === null
+        ? `These dates overlap "${clash.name}", which has no end date. Press End now on it first.`
+        : `These dates overlap "${clash.name}".`,
+    );
+  }
   return { name: clean, starts, ends: end };
 }
 
@@ -348,6 +359,17 @@ export function updateSeason(db, id, input) {
   const v = validateSeason(db, input, id);
   db.prepare('UPDATE seasons SET name = ?, starts = ?, ends = ? WHERE id = ?').run(v.name, v.starts, v.ends, id);
   return { id, ...v };
+}
+
+// Ends a running season now, so the next one can start (a game finishing after this counts in no season until
+// there is another). A season that has not started has nothing to end (delete it), and one that is over is over.
+export function endSeason(db, id, now = Date.now()) {
+  const s = db.prepare('SELECT * FROM seasons WHERE id = ?').get(id);
+  if (!s) throw new SeasonError(404, 'No such season.');
+  if (now <= s.starts) throw new SeasonError(409, 'That season has not started yet: delete it instead.');
+  if (s.ends !== null && s.ends <= now) throw new SeasonError(409, 'That season is already over.');
+  db.prepare('UPDATE seasons SET ends = ? WHERE id = ?').run(now, id);
+  return { ...seasonRow(s), ends: now };
 }
 
 // Games are never touched: they simply stop belonging to any season.
@@ -407,25 +429,18 @@ export function recentAudit(db, limit = 50) {
     .map((r) => ({ ...r }));
 }
 
-// Phone numbers leave this function masked, never whole.
+// `devices` is how many devices the person has turn alerts on for.
 export function listUsers(db) {
   return db
     .prepare(
       `SELECT u.id, u.name, u.is_admin AS isAdmin, u.disabled, u.created, u.last_login AS lastLogin,
-              u.phone AS phone, u.phone_verified AS phoneVerified, u.sms_enabled AS smsEnabled,
+              (SELECT COUNT(*) FROM push_subscriptions s WHERE s.user_id = u.id) AS devices,
               COUNT(r.game_id) AS games
        FROM users u LEFT JOIN results r ON r.user_id = u.id
        GROUP BY u.id ORDER BY u.name COLLATE NOCASE`,
     )
     .all()
-    .map(({ phone, ...r }) => ({
-      ...r,
-      isAdmin: !!r.isAdmin,
-      disabled: !!r.disabled,
-      phoneVerified: !!r.phoneVerified,
-      smsEnabled: !!r.smsEnabled,
-      phone: maskPhone(phone),
-    }));
+    .map((r) => ({ ...r, isAdmin: !!r.isAdmin, disabled: !!r.disabled }));
 }
 
 export function adminCount(db) {

@@ -102,25 +102,9 @@
           <label for="pw">Password</label
           ><input id="pw" type="password" autocomplete="current-password" maxlength="200" />
         </div>
-        <div class="field" id="codeField" hidden>
-          <label for="code">Code from the text message</label
-          ><input
-            id="code"
-            type="text"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="6"
-            placeholder="123456"
-          />
-        </div>
-        <div class="field" id="phoneField" hidden>
-          <label for="phone">Mobile number, with country code (only to create an account)</label
-          ><input id="phone" type="tel" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
-        </div>
         <p id="err" class="bad" role="alert"></p>
         <div class="row">
           <button type="submit" id="loginBtn" class="primary">Log in</button>
-          <button type="button" id="codeBtn" hidden>Text me a code</button>
           <button type="button" id="registerBtn" hidden>Create account</button>
         </div>
       </form>

@@ -37,46 +37,21 @@ const name = () => $('name').value.trim();
 
 $('form').addEventListener('submit', (e) => {
   e.preventDefault();
-  const code = $('code').value.trim();
-  attempt(() =>
-    code
-      ? call('POST', '/api/login/verify', { name: name(), code })
-      : call('POST', '/api/login', { name: name(), password: $('pw').value }),
-  );
+  attempt(() => call('POST', '/api/login', { name: name(), password: $('pw').value }));
 });
 
 $('registerBtn').addEventListener('click', () =>
-  attempt(() => call('POST', '/api/register', { name: name(), password: $('pw').value, phone: $('phone').value })),
+  attempt(() => call('POST', '/api/register', { name: name(), password: $('pw').value })),
 );
 
-// The server answers the same for any name, so this says "if" rather than confirming anything.
-$('codeBtn').addEventListener('click', async () => {
-  $('err').textContent = '';
-  if (!name()) {
-    $('err').textContent = 'Enter your name first.';
-    return;
-  }
-  try {
-    await call('POST', '/api/login/code', { name: name() });
-  } catch (err) {
-    $('err').textContent = err.message;
-    return;
-  }
-  show('codeField', true);
-  $('err').textContent = 'If that account exists, a code is on its way. Enter it below.';
-  $('code').focus();
-});
-
 async function init() {
-  let config = { registrationOpen: false, codeLogin: false };
+  let config = { registrationOpen: false };
   try {
     config = await call('GET', '/api/config');
   } catch {
     /* password sign-in still works without it */
   }
-  show('codeBtn', !!config.codeLogin);
   show('registerBtn', !!config.registrationOpen);
-  show('phoneField', !!config.registrationOpen);
   // Only registration needs explaining; with it closed the page is just the logo and the form.
   show('help', !!config.registrationOpen);
   $('help').textContent = config.registrationOpen

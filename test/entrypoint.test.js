@@ -94,7 +94,6 @@ test('the admin tool creates and lists an admin when launched through a symlink'
     const env = {
       DB_FILE: path.join(tmp, 'big2.db'),
       BIG2_PASSWORD: 'correct-horse-battery',
-      BIG2_PHONE: '+447700900123',
     };
     const made = run(script('admin.js'), ['make-admin', 'boss'], env);
     assert.equal(made.status, 0, made.stderr);

@@ -247,7 +247,6 @@ export async function launch({ port, cdp, tmpPrefix, extraEnv = {} }) {
     PORT: String(port),
     DB_FILE: dbFile,
     AI_DELAY_MS: '90',
-    SMS_PROVIDER: 'none',
     ...extraEnv,
   }; // no texting in these runs, so no codes to verify
   const state = { server: null, out: '' };
@@ -262,7 +261,7 @@ export async function launch({ port, cdp, tmpPrefix, extraEnv = {} }) {
   const makeAdmin = (name, password) =>
     spawnSync(process.execPath, ['server/admin.js', 'make-admin', name], {
       cwd: ROOT,
-      env: { ...env, BIG2_PASSWORD: password, BIG2_PHONE: '+447700900001' },
+      env: { ...env, BIG2_PASSWORD: password },
       encoding: 'utf8',
     });
   const chrome = spawn(CHROME, [

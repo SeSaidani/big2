@@ -3,7 +3,6 @@
 
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
-import { normalizePhone } from './phone-format.js';
 
 const scrypt = promisify(crypto.scrypt);
 const N = 16384;
@@ -62,29 +61,16 @@ async function burn(password) {
   await verifyPassword(password, dummyHash);
 }
 
-// Every account has a phone number: it is how we tell you it is your turn.
-// `verified` is for callers that vouch for the number themselves (the command
-// line); everyone else verifies by a texted code. allowedPrefixes restricts countries.
-export async function createUser(
-  db,
-  name,
-  password,
-  { isAdmin = false, phone, verified = false, allowedPrefixes = [] } = {},
-) {
+export async function createUser(db, name, password, { isAdmin = false } = {}) {
   const err = validateCredentials(name, password);
   if (err) throw new AuthError(400, err);
-  if (phone === undefined || phone === null || phone === '') throw new AuthError(400, 'A phone number is required.');
-  const e164 = normalizePhone(phone, { allowedPrefixes });
   const hash = await hashPassword(password);
   try {
     const r = db
-      .prepare('INSERT INTO users (name, pw_hash, created, is_admin, phone, phone_verified) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(name, hash, Date.now(), isAdmin ? 1 : 0, e164, verified ? 1 : 0);
+      .prepare('INSERT INTO users (name, pw_hash, created, is_admin) VALUES (?, ?, ?, ?)')
+      .run(name, hash, Date.now(), isAdmin ? 1 : 0);
     return { id: Number(r.lastInsertRowid), name, isAdmin };
   } catch (e) {
-    if (/users\.phone/i.test(String(e.message))) {
-      throw new AuthError(409, 'That number is already used by another account.');
-    }
     if (/UNIQUE/i.test(String(e.message))) throw new AuthError(409, 'That name is taken.');
     throw e;
   }

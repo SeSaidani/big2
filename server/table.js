@@ -57,6 +57,7 @@ export class Table {
     this.timer = null;
     this.result = null;
     this.startedAt = 0;
+    this.turnSince = 0; // when the turn passed to whoever holds it (saved, so texts survive a restart)
     this.chat = [];
   }
 
@@ -73,6 +74,7 @@ export class Table {
       game: data.game,
       result: data.result,
       startedAt: data.startedAt,
+      turnSince: data.turnSince ?? deps.cfg.now(), // games saved before this was recorded
       chat: data.chat || [],
       version: data.version + 1, // clients reconnecting after a restart must not ignore the first view
     });
@@ -89,6 +91,7 @@ export class Table {
       game: this.game,
       result: this.result,
       startedAt: this.startedAt,
+      turnSince: this.turnSince,
       chat: this.chat,
       version: this.version,
     };
@@ -246,6 +249,7 @@ export class Table {
   }
 
   #commit(structural) {
+    this.turnSince = this.deps.cfg.now();
     this.#schedule();
     this.#changed(structural);
   }
@@ -265,9 +269,9 @@ export class Table {
     const seat = this.seats[this.game.turn];
     const tok = this.token;
     if (seat.kind === 'human') {
-      // A person's turn: maybe text them (the notifier decides, after a short
-      // delay, if it is still their turn and they are away).
-      this.deps.notifier?.schedule(seat.userId, () => tok === this.token && this.status === 'playing');
+      // A person's turn: the notifier may text them if they have still not played after
+      // 20 minutes, and again after 24 hours (timed from when the turn began).
+      this.deps.notifier?.schedule(seat.userId, this.turnSince, () => tok === this.token && this.status === 'playing');
       return;
     }
     if (seat.kind !== 'ai') return;

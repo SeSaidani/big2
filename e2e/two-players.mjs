@@ -48,9 +48,9 @@ async function main() {
   );
   await A.click('who');
   check(
-    'the account menu opens with Admin, Phone, Password and Log out',
+    'the account menu opens with Admin, Turn alerts, Password and Log out',
     await A.ev(
-      `document.getElementById('account').open && ['adminBtn', 'phoneBtn', 'passwordBtn', 'logoutBtn'].every((id) => document.getElementById(id).closest('.menu') && !document.getElementById(id).hidden)`,
+      `document.getElementById('account').open && ['adminBtn', 'alertsBtn', 'passwordBtn', 'logoutBtn'].every((id) => document.getElementById(id).closest('.menu') && !document.getElementById(id).hidden)`,
     ),
   );
   await A.ev(`document.body.click()`);
@@ -79,7 +79,7 @@ async function main() {
   );
   check('registration is closed by default', (await A.text('regState')).startsWith('Closed'));
   await A.ev(
-    `document.getElementById('newUserName').value='alice'; document.getElementById('newUserPw').value=${JSON.stringify(TEMP_PW)}; document.getElementById('newUserPhone').value='+447700900002'; document.getElementById('createUserBtn').click()`,
+    `document.getElementById('newUserName').value='alice'; document.getElementById('newUserPw').value=${JSON.stringify(TEMP_PW)}; document.getElementById('createUserBtn').click()`,
   );
   await A.waitFor(
     `[...document.querySelectorAll('#usersBody tr')].some(r => r.children[0].textContent === 'alice')`,

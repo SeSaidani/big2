@@ -40,8 +40,8 @@ let A;
 async function main() {
   console.log('CLI:', env.makeAdmin('boss', PW).stdout.trim());
   const db = openDb(env.env.DB_FILE);
-  for (const [i, name] of ['bob', 'cat', 'dan'].entries()) {
-    await createUser(db, name, PW, { phone: `+447700900${700 + i}`, verified: true });
+  for (const name of ['bob', 'cat', 'dan']) {
+    await createUser(db, name, PW);
   }
   db.close();
   await env.state.start();

@@ -11,10 +11,10 @@ let failed = 0;
 for (const script of [
   'two-players.mjs',
   'seasons-and-phone.mjs',
-  'phone-verification.mjs',
   'three-players.mjs',
   'luck-and-skill.mjs',
   'season-games.mjs',
+  'alerts-solo-seasons.mjs',
 ]) {
   console.log(`\n=== ${script} ===`);
   const r = spawnSync(process.execPath, [path.join(here, script), ...process.argv.slice(2)], { stdio: 'inherit' });

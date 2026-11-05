@@ -13,8 +13,8 @@ function tmp() {
 
 function makeDb(file, rows = 3) {
   const db = openDb(file);
-  const ins = db.prepare('INSERT INTO users (name, pw_hash, created, phone) VALUES (?, ?, ?, ?)');
-  for (let i = 0; i < rows; i++) ins.run(`user${i}`, 'x', 1, `+4477009${String(i).padStart(5, '0')}`);
+  const ins = db.prepare('INSERT INTO users (name, pw_hash, created) VALUES (?, ?, ?)');
+  for (let i = 0; i < rows; i++) ins.run(`user${i}`, 'x', 1);
   return db;
 }
 

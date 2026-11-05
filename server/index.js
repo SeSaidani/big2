@@ -30,6 +30,7 @@ import {
   createSeason,
   updateSeason,
   deleteSeason,
+  endSeason,
 } from './db.js';
 import { luckAndSkill } from './stats.js';
 import * as auth from './auth.js';
@@ -37,21 +38,10 @@ import { Hub } from './hub.js';
 import { Lobby } from './lobby.js';
 import { createPool } from './ai-pool.js';
 import { secureRng } from './table.js';
-import { normalizePhone, maskPhone } from './phone-format.js';
-import {
-  accountPhone,
-  setUserPhone,
-  setSmsEnabled,
-  textingRow,
-  createCode,
-  dropCode,
-  checkCode,
-  logSms,
-} from './phones.js';
-import { createLoginCode, dropLoginCode, checkLoginCode } from './login-codes.js';
+import { addSubscription, removeSubscription, publicDevices, listSubscriptions } from './push-store.js';
+import { createPusher } from './pusher.js';
 import { TurnNotifier } from './notify.js';
 import { isMain } from './main-module.js';
-import { createSmsProvider, smsConfigFromEnv } from './sms/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_BODY = 4096;
@@ -153,26 +143,23 @@ export function createApp(opts = {}) {
   const log = opts.log ?? ((...a) => console.error(...a));
   const hub = new Hub();
   const chatLimit = new auth.RateLimiter(5, 10 * 1000);
-  // Text messages. With no provider configured nothing is sent, and (since a code
-  // could never arrive) numbers are accepted without verification.
-  const smsProvider = opts.smsProvider ?? createSmsProvider({ provider: 'none' });
-  const verificationRequired = (opts.phoneVerification ?? true) && smsProvider.canSend;
-  const allowedPrefixes = opts.phoneAllowedPrefixes ?? [];
-  const notifier = new TurnNotifier({
-    db,
-    provider: smsProvider,
-    isOnline: (userId) => hub.conns.has(userId),
-    config: { ...opts.notify, requireVerified: verificationRequired, now: cfg.now },
-    log,
-  });
-  const otpLimit = new auth.RateLimiter(3, 3600 * 1000); // verification texts per user per hour
+  // Turn alerts are push notifications to the devices people have turned them on for.
+  const pusher =
+    opts.pusher ??
+    createPusher({
+      db,
+      subject: opts.publicUrl || 'https://big2.invalid',
+      now: cfg.now,
+      log,
+      ...(opts.pushFetch ? { fetchImpl: opts.pushFetch } : {}),
+    });
+  const pushHosts = opts.pushHosts ?? []; // extra hosts a test's fake push service listens on
+  const notifier = new TurnNotifier({ db, pusher, config: { ...opts.notify, now: cfg.now }, log });
+  const pushTestLimit = new auth.RateLimiter(5, 3600 * 1000); // test alerts per person per hour
   const lobby = new Lobby({ db, pool, hub, cfg, log, chatLimit, notifier });
   hub.onPresence = (userId) => lobby.presence(userId); // the hub and the lobby need each other
   lobby.restore();
   const loginLimit = new auth.RateLimiter(10, 15 * 60 * 1000);
-  // Sign-in texts: per name (counted whether or not the name exists, so the limit tells nothing) and per IP.
-  const codeNameLimit = new auth.RateLimiter(3, 3600 * 1000);
-  const codeIpLimit = new auth.RateLimiter(20, 3600 * 1000);
   const registerLimit = new auth.RateLimiter(10, 3600 * 1000);
 
   auth.purgeSessions(db);
@@ -274,60 +261,9 @@ export function createApp(opts = {}) {
     });
   }
 
-  // The signed-in user as their own browser sees them: the number is masked,
-  // and `phoneRequired` says whether they must add or verify one first.
-  const publicUser = (user) => ({ ...user, ...accountPhone(db, user.id, { verificationRequired }) });
-
   function startSession(res, user, status) {
     const token = auth.createSession(db, user.id, SESSION_MS);
-    sendJson(res, status, { user: publicUser(user) }, { 'Set-Cookie': cookieFor(token, SESSION_MS / 1000) });
-  }
-
-  // Joining or creating a game needs a number on file (and verified, when texting is on).
-  const requirePhone = (user) => {
-    if (accountPhone(db, user.id, { verificationRequired }).phoneRequired) {
-      throw new HttpError(403, 'Add and verify your phone number first: we text you when it is your turn.');
-    }
-  };
-
-  // Texts a fresh verification code to the user's current number.
-  async function sendVerificationCode(userId) {
-    const key = `otp:${userId}`;
-    if (!otpLimit.allowed(key)) throw new HttpError(429, 'Too many codes requested. Try again in an hour.');
-    otpLimit.record(key);
-    const { code, phone } = createCode(db, userId, cfg.now());
-    try {
-      await smsProvider.send({ to: phone, body: `Big Two code: ${code}. It expires in 10 minutes. Do not share it.` });
-      logSms(db, userId, 'verify', true, cfg.now());
-    } catch (err) {
-      dropCode(db, userId);
-      logSms(db, userId, 'verify', false, cfg.now());
-      log(`verification text to ${maskPhone(phone)} failed: ${err.message}`);
-      throw new HttpError(502, 'We could not send the text message. Check the number and try again later.');
-    }
-  }
-
-  // Texts a sign-in code to the account's number. Not awaited by the caller: a slow
-  // provider would otherwise make "this account exists" visible in the response time.
-  function sendLoginCode(userId) {
-    const row = textingRow(db, userId);
-    if (!row || !row.phone || row.blocked) return;
-    const code = createLoginCode(db, userId, cfg.now());
-    const note = (ok) => {
-      try {
-        logSms(db, userId, 'login', ok, cfg.now());
-        if (!ok) dropLoginCode(db, userId);
-      } catch {
-        /* the database closed while a send was in flight */
-      }
-    };
-    smsProvider
-      .send({ to: row.phone, body: `Big Two sign-in code: ${code}. It expires in 10 minutes. Do not share it.` })
-      .then(() => note(true))
-      .catch((err) => {
-        note(false);
-        log(`sign-in text to ${maskPhone(row.phone)} failed: ${err.message}`);
-      });
+    sendJson(res, status, { user }, { 'Set-Cookie': cookieFor(token, SESSION_MS / 1000) });
   }
 
   const gameReply = (res, user, status = 200) => {
@@ -358,15 +294,11 @@ export function createApp(opts = {}) {
     if (p === '/api/admin/users' && m === 'GET') return sendJson(res, 200, { users: listUsers(db) });
     if (p === '/api/admin/users' && m === 'POST') {
       const body = await readJson(req);
-      const user = await auth.createUser(db, body.name, body.password, {
-        isAdmin: body.isAdmin === true,
-        phone: body.phone,
-        allowedPrefixes,
-      });
-      audit(db, admin.id, 'create_user', user.name, user.isAdmin ? 'admin' : null); // never the number
+      const user = await auth.createUser(db, body.name, body.password, { isAdmin: body.isAdmin === true });
+      audit(db, admin.id, 'create_user', user.name, user.isAdmin ? 'admin' : null);
       return sendJson(res, 201, { user });
     }
-    const act = /^\/api\/admin\/users\/(\d+)\/(password|status|role|phone)$/.exec(p);
+    const act = /^\/api\/admin\/users\/(\d+)\/(password|status|role)$/.exec(p);
     if (act && m === 'POST') {
       const target = getUserRow(parseId(act[1]));
       const body = await readJson(req);
@@ -374,10 +306,6 @@ export function createApp(opts = {}) {
         await auth.setPassword(db, target.id, body.password);
         hub.disconnect(target.id);
         audit(db, admin.id, 'reset_password', target.name);
-      } else if (act[2] === 'phone') {
-        // The person still has to confirm it with a texted code before they can be texted.
-        setUserPhone(db, target.id, normalizePhone(body.phone, { allowedPrefixes }));
-        audit(db, admin.id, 'set_phone', target.name);
       } else if (act[2] === 'status') {
         if (typeof body.disabled !== 'boolean') throw new HttpError(400, 'disabled must be true or false.');
         if (body.disabled && target.id === admin.id) throw new HttpError(409, 'You cannot disable yourself.');
@@ -422,9 +350,14 @@ export function createApp(opts = {}) {
       audit(db, admin.id, 'create_season', season.name, seasonDetail(season));
       return sendJson(res, 201, { season });
     }
-    const sea = /^\/api\/admin\/seasons\/(\d+)(\/delete)?$/.exec(p);
+    const sea = /^\/api\/admin\/seasons\/(\d+)(\/delete|\/end)?$/.exec(p);
     if (sea && m === 'POST') {
       const id = parseId(sea[1]);
+      if (sea[2] === '/end') {
+        const season = endSeason(db, id, cfg.now());
+        audit(db, admin.id, 'end_season', season.name, seasonDetail(season));
+        return sendJson(res, 200, { season });
+      }
       if (sea[2]) {
         const before = listSeasons(db, cfg.now()).find((s) => s.id === id);
         deleteSeason(db, id);
@@ -451,7 +384,6 @@ export function createApp(opts = {}) {
     if (p === '/api/config' && m === 'GET') {
       return sendJson(res, 200, {
         registrationOpen: registrationOpen(),
-        codeLogin: smsProvider.canSend,
         devTables: cfg.devTables,
       });
     }
@@ -461,11 +393,7 @@ export function createApp(opts = {}) {
       if (!registerLimit.allowed(ip)) throw new HttpError(429, 'Too many sign-ups. Try again later.');
       registerLimit.record(ip);
       const body = await readJson(req);
-      return startSession(
-        res,
-        await auth.createUser(db, body.name, body.password, { phone: body.phone, allowedPrefixes }),
-        201,
-      );
+      return startSession(res, await auth.createUser(db, body.name, body.password), 201);
     }
     if (p === '/api/login' && m === 'POST') {
       const body = await readJson(req);
@@ -479,42 +407,6 @@ export function createApp(opts = {}) {
         if (err instanceof auth.AuthError && err.status === 401) keys.forEach((k) => loginLimit.record(k));
         throw err;
       }
-    }
-    // Sign in by texted code. Step 1 always answers the same, whoever the name is.
-    if (p === '/api/login/code' && m === 'POST') {
-      if (!smsProvider.canSend) throw new HttpError(409, 'Signing in by text message is not switched on.');
-      const body = await readJson(req);
-      const name = typeof body.name === 'string' ? body.name.slice(0, 64) : '';
-      const ipKey = clientIp(req);
-      const nameKey = name.toLowerCase();
-      if (!codeIpLimit.allowed(ipKey) || !codeNameLimit.allowed(nameKey)) {
-        throw new HttpError(429, 'Too many codes requested. Try again in an hour.');
-      }
-      codeIpLimit.record(ipKey);
-      codeNameLimit.record(nameKey);
-      const row = db.prepare('SELECT id, disabled FROM users WHERE name = ?').get(name);
-      if (row && !row.disabled) sendLoginCode(row.id);
-      return sendJson(res, 200, { ok: true });
-    }
-    if (p === '/api/login/verify' && m === 'POST') {
-      const body = await readJson(req);
-      const keys = [`ip:${clientIp(req)}`, `name:${String(body.name).toLowerCase()}`];
-      if (!keys.every((k) => loginLimit.allowed(k))) {
-        throw new HttpError(429, 'Too many failed logins. Try again later.');
-      }
-      const row =
-        typeof body.name === 'string'
-          ? db.prepare('SELECT id, name, is_admin AS isAdmin, disabled FROM users WHERE name = ?').get(body.name)
-          : undefined;
-      if (!row || !checkLoginCode(db, row.id, body.code, cfg.now())) {
-        keys.forEach((k) => loginLimit.record(k));
-        throw new HttpError(401, 'That code is wrong or has expired. Ask for a new one.');
-      }
-      // Only someone who holds a valid code learns the account is disabled.
-      if (row.disabled) throw new HttpError(403, 'This account has been disabled. Ask an admin.');
-      // The code reached the number on file, so that number is proven.
-      db.prepare('UPDATE users SET phone_verified = 1, last_login = ? WHERE id = ?').run(cfg.now(), row.id);
-      return startSession(res, { id: row.id, name: row.name, isAdmin: !!row.isAdmin }, 200);
     }
     if (p === '/api/logout' && m === 'POST') {
       auth.deleteSession(db, sessionToken(req));
@@ -537,34 +429,35 @@ export function createApp(opts = {}) {
     if (p.startsWith('/api/admin/')) return adminApi(req, res, url);
 
     const user = requireUser(req);
-    if (p === '/api/me' && m === 'GET') return sendJson(res, 200, { user: publicUser(user) });
+    if (p === '/api/me' && m === 'GET') return sendJson(res, 200, { user });
 
-    // ---- my phone number and text settings ----
-    if (p === '/api/phone' && m === 'POST') {
-      const body = await readJson(req);
-      setUserPhone(db, user.id, normalizePhone(body.phone, { allowedPrefixes }));
-      if (verificationRequired) await sendVerificationCode(user.id);
-      return sendJson(res, 200, { user: publicUser(user), codeSent: verificationRequired });
+    // ---- my devices and turn alerts ----
+    if (p === '/api/push' && m === 'GET') {
+      return sendJson(res, 200, { publicKey: pusher.publicKey, devices: publicDevices(db, user.id) });
     }
-    if (p === '/api/phone/resend' && m === 'POST') {
-      if (!verificationRequired) throw new HttpError(409, 'Verification is not switched on.');
-      if (!accountPhone(db, user.id, { verificationRequired }).needsCode) {
-        throw new HttpError(409, 'Nothing to verify.');
+    if (p === '/api/push/subscribe' && m === 'POST') {
+      const body = await readJson(req);
+      addSubscription(db, user.id, body.subscription, { label: body.label, now: cfg.now(), extraHosts: pushHosts });
+      return sendJson(res, 200, { devices: publicDevices(db, user.id) });
+    }
+    if (p === '/api/push/unsubscribe' && m === 'POST') {
+      const body = await readJson(req);
+      removeSubscription(db, user.id, body.endpoint);
+      return sendJson(res, 200, { devices: publicDevices(db, user.id) });
+    }
+    if (p === '/api/push/test' && m === 'POST') {
+      if (!listSubscriptions(db, user.id).length) {
+        throw new HttpError(409, 'Turn alerts are not switched on for any of your devices.');
       }
-      await sendVerificationCode(user.id);
-      return sendJson(res, 200, { user: publicUser(user), codeSent: true });
-    }
-    if (p === '/api/phone/verify' && m === 'POST') {
-      const body = await readJson(req);
-      // At most 5 tries per code and 3 codes an hour: about 15 guesses in a million, per hour.
-      checkCode(db, user.id, body.code, cfg.now());
-      return sendJson(res, 200, { user: publicUser(user) });
-    }
-    if (p === '/api/sms' && m === 'POST') {
-      const body = await readJson(req);
-      if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'enabled must be true or false.');
-      setSmsEnabled(db, user.id, body.enabled);
-      return sendJson(res, 200, { user: publicUser(user) });
+      const key = `pushtest:${user.id}`;
+      if (!pushTestLimit.allowed(key)) throw new HttpError(429, 'Too many test alerts. Try again later.');
+      pushTestLimit.record(key);
+      const r = await pusher.sendToUser(
+        user.id,
+        { title: 'Big Two', body: 'Test alert: this device is set up for turn alerts.', url: '/', tag: 'test' },
+        { topic: 'test' },
+      );
+      return sendJson(res, 200, { ...r, devices: publicDevices(db, user.id) });
     }
     if (p === '/api/password' && m === 'POST') {
       const body = await readJson(req);
@@ -583,17 +476,14 @@ export function createApp(opts = {}) {
     if (p === '/api/game' && m === 'GET') return gameReply(res, user);
     if (p === '/api/game' && m === 'POST') {
       const body = await readJson(req);
-      requirePhone(user);
       lobby.create(user, body.aiLevel, body.seats);
       return gameReply(res, user, 201);
     }
     const act = /^\/api\/game\/(join|leave|start|move|chat)$/.exec(p);
     if (act && m === 'POST') {
       const verb = act[1];
-      if (verb === 'join') {
-        requirePhone(user);
-        lobby.join(user);
-      } else if (verb === 'leave') lobby.leave(user);
+      if (verb === 'join') lobby.join(user);
+      else if (verb === 'leave') lobby.leave(user);
       else if (verb === 'start') lobby.start(user);
       else if (verb === 'move') {
         const body = await readJson(req);
@@ -626,6 +516,7 @@ export function createApp(opts = {}) {
     else if (pathname === '/styles.css') rel = 'styles.css';
     else if (pathname === '/favicon.svg' || pathname === '/favicon.ico') rel = 'favicon.svg';
     else if (pathname === '/manifest.webmanifest') rel = 'manifest.webmanifest';
+    else if (pathname === '/sw.js') rel = 'sw.js';
     else if (/^\/icon-(180|192|512)\.png$/.test(pathname)) rel = pathname.slice(1);
     else if (/^\/src\/[A-Za-z0-9_/-]+(\.[A-Za-z0-9_-]+)*\.js$/.test(pathname) && !pathname.includes('..')) {
       rel = pathname.slice(1);
@@ -681,32 +572,24 @@ export function createApp(opts = {}) {
 
 if (isMain(import.meta.url)) {
   const env = process.env;
-  const smsProvider = createSmsProvider(smsConfigFromEnv(env));
   const app = createApp({
     dbFile: env.DB_FILE || path.join(ROOT, 'data', 'big2.db'),
     aiDelayMs: env.AI_DELAY_MS ? Number(env.AI_DELAY_MS) : undefined,
     devTables: env.DEV_TABLES === '1',
     trustProxy: env.TRUST_PROXY === '1',
     secureCookies: env.SECURE_COOKIES === '1',
-    smsProvider,
-    phoneVerification: env.PHONE_VERIFICATION !== 'off',
-    phoneAllowedPrefixes: (env.PHONE_ALLOWED_PREFIXES || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
+    publicUrl: env.PUBLIC_URL || '',
     notify: {
-      baseUrl: env.PUBLIC_URL || '',
-      when: env.SMS_WHEN === 'always' ? 'always' : 'offline',
-      ...(env.SMS_DELAY_MS ? { delayMs: Number(env.SMS_DELAY_MS) } : {}),
-      ...(env.SMS_COOLDOWN_MS ? { cooldownMs: Number(env.SMS_COOLDOWN_MS) } : {}),
-      ...(env.SMS_MAX_PER_DAY ? { maxPerDay: Number(env.SMS_MAX_PER_DAY) } : {}),
+      ...(env.PUSH_FIRST_AFTER_MS ? { firstAfterMs: Number(env.PUSH_FIRST_AFTER_MS) } : {}),
+      ...(env.PUSH_SECOND_AFTER_MS ? { secondAfterMs: Number(env.PUSH_SECOND_AFTER_MS) } : {}),
+      ...(env.PUSH_MAX_PER_DAY ? { maxPerDay: Number(env.PUSH_MAX_PER_DAY) } : {}),
     },
   });
-  console.log(
-    `Text messages: ${smsProvider.name}${smsProvider.canSend ? '' : ' (off: numbers are not verified, no turn texts)'}`,
-  );
-  if (smsProvider.name === 'console' && env.NODE_ENV === 'production') {
-    console.warn('WARNING: the console SMS provider prints verification codes. Set SMS_PROVIDER for production.');
+  console.log('Turn alerts: push notifications');
+  if (!/^https:\/\//.test(env.PUBLIC_URL || '')) {
+    console.warn(
+      'WARNING: set PUBLIC_URL to the https address of this site; Apple and Google use it to identify the sender.',
+    );
   }
   const port = Number(env.PORT || 8765);
   const host = env.HOST || '127.0.0.1';

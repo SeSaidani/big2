@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { openDb, listUsers, recentAudit, stats } from '../server/db.js';
 import { makeAdmin, resetPassword } from '../server/admin.js';
 import { login } from '../server/auth.js';
-import { PASSWORD, boot, Client, makeUser, nextPhone } from './support.js';
+import { PASSWORD, boot, Client, makeUser } from './support.js';
 
 const NEW_PASSWORD = 'another-long-password';
 
@@ -18,7 +18,7 @@ test('every admin route refuses non-admins', async () => {
     const routes = [
       ['GET', '/api/admin/overview'],
       ['GET', '/api/admin/users'],
-      ['POST', '/api/admin/users', { name: 'newbie', password: PASSWORD, phone: nextPhone() }],
+      ['POST', '/api/admin/users', { name: 'newbie', password: PASSWORD }],
       ['POST', '/api/admin/users/1/password', { password: NEW_PASSWORD }],
       ['POST', '/api/admin/users/1/status', { disabled: true }],
       ['POST', '/api/admin/users/1/role', { isAdmin: true }],
@@ -42,22 +42,18 @@ test('admin creates users with temporary passwords; they can sign in and change 
   try {
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
     for (const bad of [
-      { name: 'x', password: PASSWORD, phone: nextPhone() },
-      { name: 'okname', password: 'short', phone: nextPhone() },
+      { name: 'x', password: PASSWORD },
+      { name: 'okname', password: 'short' },
     ]) {
       assert.equal((await admin.req('POST', '/api/admin/users', bad)).status, 400);
     }
     const made = await admin.req('POST', '/api/admin/users', {
       name: 'newbie',
       password: PASSWORD,
-      phone: nextPhone(),
     });
     assert.equal(made.status, 201);
     assert.equal(made.json.user.isAdmin, false);
-    assert.equal(
-      (await admin.req('POST', '/api/admin/users', { name: 'NEWBIE', password: PASSWORD, phone: nextPhone() })).status,
-      409,
-    );
+    assert.equal((await admin.req('POST', '/api/admin/users', { name: 'NEWBIE', password: PASSWORD })).status, 409);
 
     const list = (await admin.req('GET', '/api/admin/users')).json.users;
     assert.deepEqual(
@@ -179,13 +175,13 @@ test('overview, settings and audit endpoints', async () => {
 
 test('the command-line tool creates and promotes admins and resets passwords', async () => {
   const db = openDb(':memory:');
-  const made = await makeAdmin(db, 'rootuser', PASSWORD, nextPhone());
+  const made = await makeAdmin(db, 'rootuser', PASSWORD);
   assert.equal(made.created, true);
   await login(db, 'rootuser', PASSWORD);
   assert.equal(listUsers(db)[0].isAdmin, true);
   // Promoting an existing, disabled user re-enables them and keeps their password.
   const { createUser } = await import('../server/auth.js');
-  await createUser(db, 'plainuser', PASSWORD, { phone: nextPhone() });
+  await createUser(db, 'plainuser', PASSWORD);
   db.prepare('UPDATE users SET disabled = 1 WHERE name = ?').run('plainuser');
   const promoted = await makeAdmin(db, 'plainuser', null);
   assert.equal(promoted.created, false);

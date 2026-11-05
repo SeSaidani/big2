@@ -9,6 +9,18 @@ import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
 import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
+import {
+  describeDevice,
+  alertState,
+  firstPrompt,
+  browserEnv,
+  permission,
+  registerWorker,
+  currentSubscription,
+  turnOn,
+  turnOff,
+  syncSubscription,
+} from './push-client.js';
 
 // Seats are numbered clockwise from you. At a table of four they sit West, North, East; at three, West and East.
 const SOLO_NAMES = { 4: ['You', 'West', 'North', 'East'], 3: ['You', 'West', 'East'] };
@@ -531,6 +543,10 @@ $('helpBtn').addEventListener('click', () => {
 $('helpClose').addEventListener('click', () => $('helpDlg').close());
 $('helpX').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
+// After a solo round: choose the level and players first, just look at the table, or go to the online lobby.
+$('againNewBtn').addEventListener('click', () => $('newBtn').click());
+$('endClose').addEventListener('click', () => ($('overlay').hidden = true));
+$('endOnline').addEventListener('click', () => $('modeOnline').click());
 // The play log (and the chat under it). Beside the table it can be folded away. On a phone there is
 // no room beside the table, so it is a sheet over it: the Log button opens it, the × closes it.
 const logPanel = document.querySelector('.log');
@@ -636,7 +652,7 @@ function beginOnline() {
   $('who').textContent = user.name;
   show('account', true);
   show('passwordBtn', true);
-  show('phoneBtn', true);
+  show('alertsBtn', true);
   show('adminBtn', user.isAdmin);
   adminView = false;
   viewingLobby = false;
@@ -646,8 +662,7 @@ function beginOnline() {
   refreshSeasons();
   refreshLeaderboard();
   route();
-  // Everyone needs a verified number to play online: ask straight away.
-  if (user.phoneRequired) openPhoneDialog();
+  startAlerts();
 }
 
 // (Re)open the live stream. The server answers every connection with the
@@ -749,22 +764,6 @@ function renderLobbyHome() {
     if (cls) p.className = cls;
     box.appendChild(p);
   };
-  // Nobody joins or creates a game without a verified number: that is how we tell them it is their turn.
-  if (user.phoneRequired) {
-    show('createRow', false);
-    line(
-      user.phone
-        ? 'Confirm your phone number to play: we will text you a code.'
-        : 'Add your phone number to play online: we text you when it is your turn.',
-    );
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'primary';
-    b.textContent = user.phone ? 'Confirm my number' : 'Add my number';
-    b.addEventListener('click', openPhoneDialog);
-    box.appendChild(b);
-    return;
-  }
   // A finished round's result does not block a new game (the server replaces it).
   show('createRow', !!user.isAdmin && (!g || g.status === 'done'));
   if (!g) {
@@ -1285,10 +1284,10 @@ function renderSeasons(list) {
     const edit = document.createElement('button');
     edit.textContent = 'Edit';
     edit.addEventListener('click', () => startSeasonEdit(s));
-    actions.append(
-      edit,
-      armedButton('Delete', () => seasonDo(() => api.admin.deleteSeason(s.id))),
-    );
+    actions.append(edit);
+    // A running season can be ended on the spot, so the next one can start.
+    if (s.status === 'active') actions.append(armedButton('End now', () => seasonDo(() => api.admin.endSeason(s.id))));
+    actions.append(armedButton('Delete', () => seasonDo(() => api.admin.deleteSeason(s.id))));
     tr.appendChild(actions);
     body.appendChild(tr);
   }
@@ -1323,6 +1322,7 @@ async function seasonDo(fn) {
   } catch (err) {
     $('seasonMsg').className = 'bad';
     $('seasonMsg').textContent = err.message;
+    $('seasonMsg').scrollIntoView({ block: 'nearest' }); // on a phone the message is below the fold
     return false;
   }
   await refreshAdmin();
@@ -1338,7 +1338,7 @@ async function saveSeason() {
   // An untouched field keeps its exact stored time (the input only shows minutes).
   const keep = (text, original) =>
     editingSeason && original !== null && text === toLocalInput(original) ? original : new Date(text).getTime();
-  const starts = startText ? keep(startText, editingSeason && editingSeason.starts) : NaN;
+  const starts = startText ? keep(startText, editingSeason && editingSeason.starts) : Date.now(); // empty means now
   const ends = endText ? keep(endText, editingSeason && editingSeason.ends) : null;
   if (Number.isNaN(starts) || (ends !== null && Number.isNaN(ends))) {
     $('seasonMsg').className = 'bad';
@@ -1398,7 +1398,7 @@ function renderAdmin(o, users, entries) {
     };
     cell(u.name);
     cell([u.isAdmin ? 'admin' : 'player', u.disabled ? 'disabled' : ''].filter(Boolean).join(', '));
-    cell(u.phone ? `${u.phone} (${u.phoneVerified ? 'verified' : 'not verified'})` : 'none');
+    cell(u.devices ? `on (${u.devices} device${u.devices === 1 ? '' : 's'})` : 'off');
     cell(u.games);
     cell(u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'never');
     const actions = document.createElement('td');
@@ -1406,16 +1406,13 @@ function renderAdmin(o, users, entries) {
     const reset = document.createElement('button');
     reset.textContent = 'Reset password';
     reset.addEventListener('click', () => openReset(u));
-    const setPhone = document.createElement('button');
-    setPhone.textContent = 'Set phone';
-    setPhone.addEventListener('click', () => openAdminPhone(u));
     const dis = armedButton(u.disabled ? 'Enable' : 'Disable', () =>
       adminDo(() => api.admin.setDisabled(u.id, !u.disabled)),
     );
     const role = armedButton(u.isAdmin ? 'Remove admin' : 'Make admin', () =>
       adminDo(() => api.admin.setAdmin(u.id, !u.isAdmin)),
     );
-    actions.append(reset, setPhone, dis, role);
+    actions.append(reset, dis, role);
     tr.appendChild(actions);
     body.appendChild(tr);
   }
@@ -1455,11 +1452,10 @@ async function submitCreateUser() {
   msg.textContent = '';
   try {
     const name = $('newUserName').value.trim();
-    await api.admin.createUser(name, $('newUserPw').value, $('newUserPhone').value, $('newUserAdmin').checked);
-    msg.textContent = `Created ${name}. Give them the temporary password; they confirm their number when they sign in.`;
+    await api.admin.createUser(name, $('newUserPw').value, $('newUserAdmin').checked);
+    msg.textContent = `Created ${name}. Give them the temporary password.`;
     $('newUserName').value = '';
     $('newUserPw').value = '';
-    $('newUserPhone').value = '';
     $('newUserAdmin').checked = false;
   } catch (err) {
     msg.className = 'bad';
@@ -1469,86 +1465,142 @@ async function submitCreateUser() {
   await refreshAdmin();
 }
 
-// ---- my phone number ----
-function renderPhoneDialog() {
-  $('phoneCurrent').textContent = user.phone || 'none';
-  $('phoneState').textContent = user.phone ? (user.phoneVerified ? '(verified)' : '(not verified yet)') : '';
-  show('phoneCodeField', !!user.needsCode);
-  $('smsToggle').checked = !!user.smsEnabled;
+// ---- turn alerts (push notifications) ----
+const DEVICE = describeDevice(browserEnv());
+const IOS_HELP_SEEN = 'big2.iosHelpSeen';
+const ALERTS_DISMISSED = 'big2.alertsDismissed';
+let alertsNow = 'off'; // what alertState() says about this device
+let alertDevices = []; // every device of mine that has alerts on, as the server lists them
+
+async function readAlertState() {
+  let subscribed = false;
+  try {
+    subscribed = !!(await currentSubscription());
+  } catch {
+    /* no service worker here (a private window, an old browser): alertState says what is possible */
+  }
+  alertsNow = alertState(DEVICE, { permission: permission(), subscribed });
+  return alertsNow;
 }
 
-function openPhoneDialog() {
-  $('phoneMsg').textContent = '';
-  $('phoneInput').value = '';
-  $('phoneCode').value = '';
-  renderPhoneDialog();
-  if (!$('phoneDlg').open) $('phoneDlg').showModal();
+// On sign-in: a device that already has alerts is kept registered (quietly), and a phone that could have them
+// is offered them once: an iPhone is shown how to add the game to its Home Screen; any other phone gets a
+// one-tap bar. Nothing here asks the browser for permission: that only ever happens from a tap.
+async function startAlerts() {
+  try {
+    if (DEVICE.canPush) await registerWorker();
+    let state = await readAlertState();
+    if (state === 'on' || state === 'resubscribe') {
+      alertDevices = (await syncSubscription(api, DEVICE)).devices;
+      state = await readAlertState();
+    }
+    const first = firstPrompt(DEVICE, state, {
+      iosHelpSeen: !!localStorage.getItem(IOS_HELP_SEEN),
+      dismissed: !!localStorage.getItem(ALERTS_DISMISSED),
+    });
+    show('alertsBanner', first === 'banner');
+    if (first === 'ios-help') {
+      localStorage.setItem(IOS_HELP_SEEN, '1');
+      $('iosDlg').showModal();
+    }
+  } catch {
+    /* alerts are an extra: the game works without them, and the menu explains what is wrong */
+  }
 }
 
-async function phoneDo(fn, okText) {
-  const msg = $('phoneMsg');
-  msg.className = 'bad';
+const ALERT_STATUS = {
+  on: () => `Alerts are on for this device (${DEVICE.label}).`,
+  off: () => 'Alerts are off for this device.',
+  resubscribe: () => 'This browser allowed alerts, but this device needs switching on again.',
+  blocked: () => 'This browser has blocked alerts for this site.',
+  install: () => 'On an iPhone or iPad, alerts need the game on your Home Screen first.',
+  unsupported: () => 'This browser cannot show turn alerts.',
+};
+
+const ALERT_HELP = {
+  blocked:
+    'Alerts were switched off for this site, so the browser will not ask again. Allow them in the phone settings: Android, Settings, Apps, your browser, Notifications. iPhone, Settings, Notifications, Big Two. Then come back and press Turn on alerts.',
+  unsupported:
+    'Try Chrome on an Android phone, or on an iPhone add the game to the Home Screen (needs iOS 16.4 or newer). Computers work in Chrome, Edge and Firefox.',
+};
+
+function renderAlerts() {
+  $('alertsStatus').textContent = ALERT_STATUS[alertsNow]();
+  const help = $('alertsHelp');
+  help.textContent = ALERT_HELP[alertsNow] || '';
+  if (alertsNow === 'install') {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'primary';
+    b.textContent = 'Show me how';
+    b.addEventListener('click', () => $('iosDlg').showModal());
+    help.appendChild(b);
+  }
+  show('alertsOn', alertsNow === 'off' || alertsNow === 'resubscribe');
+  show('alertsTest', alertsNow === 'on');
+  show('alertsOff', alertsNow === 'on');
+  show('alertsDevices', alertDevices.length > 0);
+  const list = $('alertsDeviceList');
+  list.innerHTML = '';
+  for (const d of alertDevices) {
+    const li = document.createElement('li');
+    li.textContent = `${d.label}: ${d.lastOk ? `last alert ${new Date(d.lastOk).toLocaleString()}` : 'no alert sent yet'}`;
+    list.appendChild(li);
+  }
+}
+
+async function openAlertsDialog() {
+  $('alertsMsg').textContent = '';
+  await readAlertState();
+  try {
+    alertDevices = (await api.push()).devices;
+  } catch {
+    alertDevices = [];
+  }
+  renderAlerts();
+  if (!$('alertsDlg').open) $('alertsDlg').showModal();
+}
+
+async function alertsDo(fn, okText = '') {
+  const msg = $('alertsMsg');
+  msg.className = 'muted';
   msg.textContent = '';
   try {
-    const reply = await fn();
-    if (reply && reply.user) user = reply.user;
-    if (okText) {
-      msg.className = 'muted';
-      msg.textContent = okText(reply);
+    await fn();
+    msg.textContent = okText;
+  } catch (err) {
+    msg.className = 'bad';
+    msg.textContent = err.message || 'Something went wrong.';
+  }
+  await readAlertState();
+  renderAlerts();
+  show('alertsBanner', false);
+}
+
+// Straight from the tap: turnOn asks the browser's permission question before anything else.
+const alertsTurnOn = () =>
+  alertsDo(async () => {
+    const r = await turnOn(api, DEVICE);
+    if (r.permission === 'denied') {
+      throw new Error('The browser blocked alerts. Allow them in the phone settings, then try again.');
     }
-  } catch (err) {
-    msg.textContent = err.message;
-    return false;
-  } finally {
-    renderPhoneDialog();
-    route();
-  }
-  return true;
-}
+    if (r.permission !== 'granted') throw new Error('Alerts were not switched on: the question was dismissed.');
+    alertDevices = r.devices;
+  }, 'Alerts are on. Press Send a test alert to check.');
 
-const savePhone = () =>
-  phoneDo(
-    () => api.setPhone($('phoneInput').value),
-    (r) => (r.codeSent ? 'Saved. We texted you a 6-digit code: enter it below.' : 'Saved.'),
-  );
-const verifyPhoneCode = async () => {
-  if (
-    await phoneDo(
-      () => api.verifyPhone($('phoneCode').value),
-      () => 'Verified. Thank you.',
-    )
-  ) {
-    $('phoneCode').value = '';
-  }
-};
-const resendPhoneCode = () =>
-  phoneDo(
-    () => api.resendCode(),
-    () => 'A new code is on its way.',
-  );
-const toggleSms = () => phoneDo(() => api.setSms($('smsToggle').checked));
+const alertsTurnOff = () =>
+  alertsDo(async () => {
+    alertDevices = (await turnOff(api)).devices;
+  }, 'Alerts are off for this device.');
 
-// ---- an admin sets someone's number ----
-let adminPhoneTarget = null;
-function openAdminPhone(u) {
-  adminPhoneTarget = u;
-  $('adminPhoneName').textContent = u.name;
-  $('adminPhoneInput').value = '';
-  $('adminPhoneErr').textContent = '';
-  $('adminPhoneDlg').showModal();
-}
+const alertsTest = () =>
+  alertsDo(async () => {
+    const r = await api.pushTest();
+    alertDevices = r.devices;
+    if (!r.delivered) throw new Error('The test did not reach any device. Try turning alerts off and on again.');
+  }, 'Sent. It should arrive on your phone in a few seconds.');
 
-async function submitAdminPhone() {
-  try {
-    await api.admin.setPhone(adminPhoneTarget.id, $('adminPhoneInput').value);
-  } catch (err) {
-    $('adminPhoneErr').textContent = err.message;
-    return;
-  }
-  $('adminPhoneDlg').close();
-  await refreshAdmin();
-}
-
+// ---- my password ----
 async function submitPassword() {
   $('pwErr').textContent = '';
   passwordChanging = true;
@@ -1582,6 +1634,13 @@ document.addEventListener('keydown', (e) => {
 });
 $('logoutBtn').addEventListener('click', async () => {
   try {
+    // This phone stops getting your alerts (it keeps its browser permission, so signing in again turns them back on).
+    const sub = DEVICE.canPush && (await currentSubscription());
+    if (sub) await api.pushUnsubscribe(sub.endpoint);
+  } catch {
+    /* signing out matters more */
+  }
+  try {
     await api.logout();
   } catch {
     /* already signed out */
@@ -1593,20 +1652,23 @@ $('adminBtn').addEventListener('click', () => {
   route();
   if (adminView) refreshAdmin();
 });
-$('phoneBtn').addEventListener('click', openPhoneDialog);
-$('phoneSave').addEventListener('click', savePhone);
-$('phoneVerify').addEventListener('click', verifyPhoneCode);
-$('phoneResend').addEventListener('click', resendPhoneCode);
-$('smsToggle').addEventListener('change', toggleSms);
-$('phoneClose').addEventListener('click', () => $('phoneDlg').close());
-$('adminPhoneOk').addEventListener('click', submitAdminPhone);
-$('adminPhoneCancel').addEventListener('click', () => $('adminPhoneDlg').close());
-for (const [id, fn] of [
-  ['phoneInput', savePhone],
-  ['phoneCode', verifyPhoneCode],
-]) {
-  $(id).addEventListener('keydown', (e) => e.key === 'Enter' && fn());
-}
+$('alertsBtn').addEventListener('click', () => {
+  $('account').open = false;
+  openAlertsDialog();
+});
+$('alertsOn').addEventListener('click', alertsTurnOn);
+$('alertsOff').addEventListener('click', alertsTurnOff);
+$('alertsTest').addEventListener('click', alertsTest);
+$('alertsClose').addEventListener('click', () => $('alertsDlg').close());
+$('alertsBannerOn').addEventListener('click', async () => {
+  await alertsTurnOn(); // straight from the tap, as the browser requires
+  if (alertsNow !== 'on') openAlertsDialog(); // it did not work: the dialog says why and what to do
+});
+$('alertsBannerLater').addEventListener('click', () => {
+  localStorage.setItem(ALERTS_DISMISSED, '1');
+  show('alertsBanner', false);
+});
+$('iosOk').addEventListener('click', () => $('iosDlg').close());
 $('passwordBtn').addEventListener('click', () => {
   $('pwErr').textContent = '';
   $('pwDlg').showModal();

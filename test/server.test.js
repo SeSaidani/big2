@@ -19,7 +19,6 @@ import {
   checkNoLeak,
   driveEasy,
   seatPlayers,
-  nextPhone,
 } from './support.js';
 
 const tableOf = (ctx) => ctx.app.lobby.table;
@@ -40,7 +39,7 @@ test('accounts: registration is closed by default; opened by the admin it works'
   try {
     const anon = new Client(ctx.base);
     assert.equal((await anon.req('GET', '/api/config')).json.registrationOpen, false);
-    const closed = await anon.req('POST', '/api/register', { name: 'Alice', password: PASSWORD, phone: nextPhone() });
+    const closed = await anon.req('POST', '/api/register', { name: 'Alice', password: PASSWORD });
     assert.equal(closed.status, 403);
 
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
@@ -48,10 +47,7 @@ test('accounts: registration is closed by default; opened by the admin it works'
     assert.equal((await anon.req('GET', '/api/config')).json.registrationOpen, true);
 
     const a = new Client(ctx.base);
-    assert.equal(
-      (await a.req('POST', '/api/register', { name: 'Alice', password: PASSWORD, phone: nextPhone() })).status,
-      201,
-    );
+    assert.equal((await a.req('POST', '/api/register', { name: 'Alice', password: PASSWORD })).status, 201);
     assert.equal((await a.req('GET', '/api/me')).json.user.name, 'Alice');
     assert.equal((await a.req('GET', '/api/me')).json.user.isAdmin, false);
     assert.equal(
@@ -59,15 +55,14 @@ test('accounts: registration is closed by default; opened by the admin it works'
         await new Client(ctx.base).req('POST', '/api/register', {
           name: 'alice',
           password: PASSWORD,
-          phone: nextPhone(),
         })
       ).status,
       409,
     );
     for (const bad of [
-      { name: 'x', password: PASSWORD, phone: nextPhone() },
+      { name: 'x', password: PASSWORD },
       { name: 'ok_name', password: 'short' },
-      { name: 'bad name!', password: PASSWORD, phone: nextPhone() },
+      { name: 'bad name!', password: PASSWORD },
     ]) {
       assert.equal((await new Client(ctx.base).req('POST', '/api/register', bad)).status, 400);
     }
@@ -76,7 +71,6 @@ test('accounts: registration is closed by default; opened by the admin it works'
     await sneaky.req('POST', '/api/register', {
       name: 'sneaky',
       password: PASSWORD,
-      phone: nextPhone(),
       isAdmin: true,
     });
     assert.equal((await sneaky.req('GET', '/api/me')).json.user.isAdmin, false);
@@ -629,7 +623,13 @@ test('a running game survives a server restart and carries on to a scored finish
     }
     assert.equal(table.status, 'playing');
     await sleep(50);
-    const before = { game: JSON.stringify(table.game), version: table.version, id: table.id, chat: table.chat };
+    const before = {
+      game: JSON.stringify(table.game),
+      version: table.version,
+      id: table.id,
+      chat: table.chat,
+      turnSince: table.turnSince,
+    };
     const cookie = admin.cookie;
     await ctx.app.close(); // a restart: the live game must NOT be cancelled or lost
     const peek = openDb(dbFile);
@@ -643,6 +643,8 @@ test('a running game survives a server restart and carries on to a scored finish
     assert.equal(table.status, 'playing');
     assert.equal(JSON.stringify(table.game), before.game);
     assert.ok(table.version > before.version);
+    assert.ok(before.turnSince > 0);
+    assert.equal(table.turnSince, before.turnSince, 'when the turn began is restored, not reset');
     assert.equal(
       ctx.app.db.prepare('SELECT COUNT(*) AS n FROM games').get().n,
       0,

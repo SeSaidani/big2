@@ -28,16 +28,13 @@ async function call(method, path, body) {
 export const api = {
   config: () => call('GET', '/api/config'),
   me: () => call('GET', '/api/me'),
-  register: (name, password, phone) => call('POST', '/api/register', { name, password, phone }),
-  // My phone number: set it (a code is texted if verification is on), confirm the code, ask for another.
-  setPhone: (phone) => call('POST', '/api/phone', { phone }),
-  verifyPhone: (code) => call('POST', '/api/phone/verify', { code }),
-  resendCode: () => call('POST', '/api/phone/resend'),
-  setSms: (enabled) => call('POST', '/api/sms', { enabled }),
+  register: (name, password) => call('POST', '/api/register', { name, password }),
   login: (name, password) => call('POST', '/api/login', { name, password }),
-  // Sign in by texted code: ask for one (the reply is the same for any name), then log in with it.
-  loginCode: (name) => call('POST', '/api/login/code', { name }),
-  loginVerify: (name, code) => call('POST', '/api/login/verify', { name, code }),
+  // Turn alerts: the sender's public key and my devices; add or remove this device; send myself a test.
+  push: () => call('GET', '/api/push'),
+  pushSubscribe: (subscription, label) => call('POST', '/api/push/subscribe', { subscription, label }),
+  pushUnsubscribe: (endpoint) => call('POST', '/api/push/unsubscribe', { endpoint }),
+  pushTest: () => call('POST', '/api/push/test', {}),
   logout: () => call('POST', '/api/logout', {}),
   changePassword: (current, next) => call('POST', '/api/password', { current, next }),
   // season: 'current' | 'all' | a season id; sort: 'points' | 'perGame'. Games with computer players never count.
@@ -62,9 +59,7 @@ export const api = {
     overview: () => call('GET', '/api/admin/overview'),
     users: () => call('GET', '/api/admin/users'),
     audit: () => call('GET', '/api/admin/audit?limit=30'),
-    createUser: (name, password, phone, isAdmin) =>
-      call('POST', '/api/admin/users', { name, password, phone, isAdmin }),
-    setPhone: (id, phone) => call('POST', `/api/admin/users/${id}/phone`, { phone }),
+    createUser: (name, password, isAdmin) => call('POST', '/api/admin/users', { name, password, isAdmin }),
     resetPassword: (id, password) => call('POST', `/api/admin/users/${id}/password`, { password }),
     setDisabled: (id, disabled) => call('POST', `/api/admin/users/${id}/status`, { disabled }),
     setAdmin: (id, isAdmin) => call('POST', `/api/admin/users/${id}/role`, { isAdmin }),
@@ -72,6 +67,7 @@ export const api = {
     createSeason: (name, starts, ends) => call('POST', '/api/admin/seasons', { name, starts, ends }),
     updateSeason: (id, name, starts, ends) => call('POST', `/api/admin/seasons/${id}`, { name, starts, ends }),
     deleteSeason: (id) => call('POST', `/api/admin/seasons/${id}/delete`, {}),
+    endSeason: (id) => call('POST', `/api/admin/seasons/${id}/end`, {}),
     cancelGame: () => call('POST', '/api/admin/game/cancel', {}),
   },
 };

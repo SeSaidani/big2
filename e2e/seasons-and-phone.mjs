@@ -22,8 +22,8 @@ async function seedGames() {
   const db = openDb(env.env.DB_FILE);
   const boss = db.prepare("SELECT id FROM users WHERE name = 'boss'").get().id;
   const others = [];
-  for (const [i, name] of ['bob', 'cat', 'dan'].entries()) {
-    others.push((await createUser(db, name, PW, { phone: `+447700900${700 + i}`, verified: true })).id);
+  for (const name of ['bob', 'cat', 'dan']) {
+    others.push((await createUser(db, name, PW)).id);
   }
   const t = Date.now() - 10 * 60 * 1000;
   db.prepare('UPDATE seasons SET starts = ?').run(t - 1000); // Season 1 began just now; the games are a little older
