@@ -1222,6 +1222,8 @@ button.ghost.active {
     --overlap: 24px;
     --px: 0px;
 
+    /* wide enough for the whole row of buttons, which now includes Log (it is not just the hand's width) */
+    width: min(100%, 540px);
     padding: 2px 0 0;
     gap: 2px;
   }
@@ -1410,9 +1412,8 @@ button.ghost.active {
 
   .hand {
     order: 4;
-    padding: 46px 0 0;
-    min-height: calc(var(--ch) + 46px - 36px);
-    margin-bottom: -36px; /* the bottom of the cards falls below the table edge, which clips it */
+    padding: 46px 0 16px; /* room above for a lifted card, and below for the arc of the fan */
+    min-height: calc(var(--ch) + 46px + 16px);
     max-width: 100%;
     touch-action: pan-y;
   }
@@ -1512,4 +1513,55 @@ button.ghost.active {
   width: min(300px, 100%);
   height: auto;
   margin: 0 auto;
+}
+
+/* On a phone the play log and chat are a sheet over the table, opened by the Log button, so the
+   table keeps the whole screen. (A landscape phone, too short for a side panel, does the same.) */
+.compact-only {
+  display: none;
+}
+
+@media (max-width: 700px), (orientation: landscape) and (max-height: 520px) {
+  .compact-only {
+    display: inline-block;
+  }
+
+  .log {
+    display: none;
+  }
+
+  body.log-open {
+    overflow: hidden;
+  }
+
+  body.log-open .log {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    max-height: none;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 0;
+  }
+
+  body.log-open .log-toggle::after {
+    content: '×';
+    width: auto;
+    height: auto;
+    margin: 0;
+    font-size: 1.9rem;
+    line-height: 1;
+    border: 0;
+    transform: none;
+  }
+
+  .log-btn.unread::after {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
 }

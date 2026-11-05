@@ -189,8 +189,8 @@ async function main() {
     geom.slices.join(','),
   );
   check(
-    'the hand is tucked below the table edge',
-    geom.cardBottom > geom.tableBottom,
+    'the whole hand sits inside the table, nothing clipped at the bottom',
+    geom.cardBottom <= geom.tableBottom,
     `cards reach ${geom.cardBottom.toFixed(0)}, table ends ${geom.tableBottom.toFixed(0)}`,
   );
   await P.shot('4-phone-table');
@@ -252,6 +252,23 @@ async function main() {
     btn.every((h) => h >= 44),
     btn.join(','),
   );
+
+  // The play log is a sheet over the table, opened on request (it used to sit under the hand).
+  const logShown = () => P.ev(`getComputedStyle(document.querySelector('.log')).display !== 'none'`);
+  check('on a phone the play log is off the table until asked for', !(await logShown()));
+  await P.click('logBtn');
+  check(
+    'the Log button opens it as a full-screen sheet',
+    (await logShown()) &&
+      (await P.ev(
+        `(() => { const r = document.querySelector('.log').getBoundingClientRect(); return r.width === innerWidth && r.height === innerHeight; })()`,
+      )),
+  );
+  await P.click('logToggle');
+  check('the × closes it', !(await logShown()));
+  await P.click('logBtn');
+  await P.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  check('Escape closes it too', !(await logShown()));
 
   // ---------- landscape phone ----------
   await P.phone(844, 390);
