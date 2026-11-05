@@ -186,8 +186,6 @@
               ></label>
             </div>
             <div class="row">
-              <button type="button" id="lbHuman" class="seg active">Humans only</button>
-              <button type="button" id="lbAi" class="seg">With computer players</button>
               <button type="button" id="lbSort" class="ghost">Ranked by: total points</button>
             </div>
             <p id="lbSeasonInfo" class="muted"></p>
@@ -207,8 +205,8 @@
                 <tbody id="lbBody"></tbody>
               </table>
               <p class="muted">
-                Points are running totals (what you have won minus what you have paid). Games with computer players are
-                scored on their own board.
+                Points are running totals (what you have won minus what you have paid). Only games with no computer
+                players count.
               </p>
             </div>
             <div id="lsBox" hidden>
@@ -535,7 +533,10 @@
       <h3>Online</h3>
       <ul>
         <li>One game runs at a time. An admin creates it, and only an admin can cancel it.</li>
-        <li>Seats nobody takes are played by the computer at the level the admin chose.</li>
+        <li>
+          Seats nobody takes are played by the computer at the level the admin chose. A game with computer players is
+          just for fun: it does not count on the leaderboard.
+        </li>
         <li>
           Leaving to the lobby keeps your seat. Nobody is timed out: if a player is away, the game waits for them.
         </li>
@@ -544,9 +545,7 @@
           Where the server has texting switched on, you get a text when it is your turn, to the mobile number on your
           account.
         </li>
-        <li>
-          The leaderboard adds up points over a season. Games with computer players are scored on their own board.
-        </li>
+        <li>The leaderboard adds up points over a season. Only games with no computer players count towards it.</li>
       </ul>
       <div class="row">
         <button type="button" id="helpClose" class="primary">Close</button>

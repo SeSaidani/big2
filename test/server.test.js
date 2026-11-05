@@ -248,7 +248,8 @@ test('four humans play a full game: no view leaks a hand, result is zero-sum and
     assert.equal(ctx.app.db.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished'").get().n, 1);
     assert.equal(ctx.app.db.prepare('SELECT SUM(delta) AS s FROM results').get().s, 0);
     assert.equal((await clients[0].req('GET', '/api/leaderboard?kind=human')).json.rows.length, 4);
-    assert.equal((await clients[0].req('GET', '/api/leaderboard?kind=ai')).json.rows.length, 0);
+    // There is no computer board: asking for one gets the one board, and a game with computers never joins it.
+    assert.equal((await clients[0].req('GET', '/api/leaderboard?kind=ai')).json.rows.length, 4);
     assert.deepEqual(ctx.logs, []);
 
     // A finished round does not block the next game: an admin simply creates one.
@@ -298,6 +299,31 @@ test('a game has 3 or 4 seats and nothing else', async () => {
     }
     assert.equal((await admin.req('POST', '/api/game', { aiLevel: 'easy', seats: 3 })).status, 201);
     assert.equal(tableOf(ctx).seats.length, 3);
+  } finally {
+    await ctx.app.close();
+  }
+});
+
+test('a game with computer players is saved, but it is on no board and not in Luck & skill', async () => {
+  const ctx = await boot({ rng: mulberry32(33) });
+  try {
+    const clients = await seatPlayers(ctx, 'cpu', 1);
+    driveEasy(clients[0], clients[0].ev, () => tableOf(ctx).game);
+    assert.equal((await clients[0].req('POST', '/api/game/start')).status, 200);
+    const done = await clients[0].ev.waitFor(isDone, 30000);
+    assert.deepEqual(clients[0].errors, []);
+    assert.equal(done.data.result.hasAi, true);
+    assert.equal(done.data.result.saved, true);
+    assertRecordReplays(ctx, 4, done.data.result.winner); // it is still saved in full
+
+    const db = ctx.app.db;
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished' AND has_ai = 1").get().n, 1);
+    const lb = await clients[0].req('GET', '/api/leaderboard?season=current');
+    assert.deepEqual(lb.json.rows, []);
+    const st = await clients[0].req('GET', '/api/stats?season=current');
+    assert.deepEqual(st.json.rows, []);
+    assert.equal(st.json.pending, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_expectation').get().n, 0, 'it was not priced');
   } finally {
     await ctx.app.close();
   }

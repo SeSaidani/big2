@@ -46,7 +46,6 @@ let lobbyGame = null; // summary of the one game, or null
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
-let lbKind = 'human';
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
 let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
@@ -784,7 +783,7 @@ function renderLobbyHome() {
     [
       'Computer',
       empty > 0
-        ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}`
+        ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}, so this game will not count on the leaderboard`
         : 'no computer players',
     ],
   ]) {
@@ -819,7 +818,8 @@ function renderLobbyHome() {
 }
 
 function renderWaitRoom(t) {
-  $('waitInfo').textContent = `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI.`;
+  $('waitInfo').textContent =
+    `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI, and a game with computer players does not count on the leaderboard.`;
   const ul = $('waitSeats');
   ul.innerHTML = '';
   t.seats.forEach((s, i) => {
@@ -883,7 +883,7 @@ async function refreshStats(seq) {
     body.appendChild(tr);
   };
   try {
-    const { season, rows, minGames, pending } = await api.stats(lbKind, lbSeason);
+    const { season, rows, minGames, pending } = await api.stats(lbSeason);
     if (seq !== lbSeq) return;
     if (!season) $('lbSeasonInfo').textContent = 'No season is running right now. Pick a past season, or All-time.';
     else if (season.id === null) {
@@ -895,7 +895,7 @@ async function refreshStats(seq) {
     note(
       pending > 0
         ? `Still working out ${pending} game${pending === 1 ? '' : 's'}: look again in a moment.`
-        : `Shown from ${minGames} games. Only games saved with their deals count (the "of" column shows how many of a player's games that is).`,
+        : `Shown from ${minGames} games. Only games with no computer players, saved with their deals, count (the "of" column shows how many of a player's games that is).`,
     );
     if (!rows.length) return message(season ? 'No games with their deals saved yet.' : '');
     body.innerHTML = '';
@@ -928,8 +928,6 @@ async function refreshStats(seq) {
 async function refreshLeaderboard() {
   const body = $('lbBody');
   const seq = ++lbSeq;
-  $('lbHuman').classList.toggle('active', lbKind === 'human');
-  $('lbAi').classList.toggle('active', lbKind === 'ai');
   $('lbViewStandings').classList.toggle('active', lbView === 'standings');
   $('lbViewStats').classList.toggle('active', lbView === 'stats');
   show('lbStandings', lbView === 'standings');
@@ -948,7 +946,7 @@ async function refreshLeaderboard() {
     body.appendChild(tr);
   };
   try {
-    const { season, rows } = await api.leaderboard(lbKind, lbSeason, lbSort);
+    const { season, rows } = await api.leaderboard(lbSeason, lbSort);
     if (seq !== lbSeq) return; // a newer request (another tab clicked) owns the table now
     if (!season) $('lbSeasonInfo').textContent = 'No season is running right now. Pick a past season, or All-time.';
     else if (season.id === null) {
@@ -1137,6 +1135,7 @@ function endOnlineRound(t, alreadyShown) {
   const notes = [];
   if (r && r.multiplier > 1) notes.push('Going out with a straight flush or five of a kind doubles every payment.');
   if (r && !r.saved) notes.push('This result could not be saved to the leaderboard.');
+  else if (r && r.hasAi) notes.push('This game had computer players, so it is not on the leaderboard.');
   if (!t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
   $('endNote').className = 'muted';
   $('endNote').textContent = notes.join(' ');
@@ -1628,14 +1627,6 @@ $('lbViewStandings').addEventListener('click', () => {
 });
 $('lbViewStats').addEventListener('click', () => {
   lbView = 'stats';
-  refreshLeaderboard();
-});
-$('lbHuman').addEventListener('click', () => {
-  lbKind = 'human';
-  refreshLeaderboard();
-});
-$('lbAi').addEventListener('click', () => {
-  lbKind = 'ai';
   refreshLeaderboard();
 });
 

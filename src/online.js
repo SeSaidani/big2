@@ -40,15 +40,14 @@ export const api = {
   loginVerify: (name, code) => call('POST', '/api/login/verify', { name, code }),
   logout: () => call('POST', '/api/logout', {}),
   changePassword: (current, next) => call('POST', '/api/password', { current, next }),
-  // season: 'current' | 'all' | a season id; sort: 'points' | 'perGame'
-  leaderboard: (kind, season = 'current', sort = 'points') =>
+  // season: 'current' | 'all' | a season id; sort: 'points' | 'perGame'. Games with computer players never count.
+  leaderboard: (season = 'current', sort = 'points') =>
     call(
       'GET',
-      `/api/leaderboard?kind=${kind === 'ai' ? 'ai' : 'human'}&season=${encodeURIComponent(season)}&sort=${sort === 'perGame' ? 'perGame' : 'points'}`,
+      `/api/leaderboard?season=${encodeURIComponent(season)}&sort=${sort === 'perGame' ? 'perGame' : 'points'}`,
     ),
-  // luck and play against what the dealt cards were worth (same kind and season as the leaderboard)
-  stats: (kind, season = 'current') =>
-    call('GET', `/api/stats?kind=${kind === 'ai' ? 'ai' : 'human'}&season=${encodeURIComponent(season)}`),
+  // luck and play against what the dealt cards were worth (same season choice as the leaderboard)
+  stats: (season = 'current') => call('GET', `/api/stats?season=${encodeURIComponent(season)}`),
   seasons: () => call('GET', '/api/seasons'),
   game: () => call('GET', '/api/game'),
   // The one game
