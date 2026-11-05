@@ -142,6 +142,13 @@ export class Table {
     if (userId !== this.hostId) throw new TableError(403, 'Only the host can start the game.');
     if (this.status === 'playing') throw new TableError(409, 'The game is already running.');
     if (this.status === 'closed') throw new TableError(409, 'That table is closed.');
+    const empty = this.seats.filter((s) => s.kind === 'empty').length;
+    if (empty > 0 && !this.deps.cfg.devTables) {
+      throw new TableError(
+        409,
+        `Every seat needs a person: ${empty} more ${empty === 1 ? 'player is' : 'players are'} needed.`,
+      );
+    }
     let bots = 0;
     this.seats = this.seats.map((s) => {
       if (s.kind !== 'empty') return s;

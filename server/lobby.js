@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { LEVELS } from '../src/ai/agents.js';
 import { PLAYER_COUNTS, NUM_PLAYERS } from '../src/cards.js';
 import { Table, TableError } from './table.js';
-import { saveLive, loadLive, clearLive } from './db.js';
+import { saveLive, loadLive, clearLive, resolveSeason } from './db.js';
 
 export class Lobby {
   // deps: { db, pool, hub, cfg, log, chatLimit }
@@ -43,10 +43,24 @@ export class Lobby {
     return { game: this.table ? this.table.summary() : null };
   }
 
+  // An online game is a season game: four people, no computer players, created by an admin while a season is
+  // running. (cfg.devTables, off in production, lifts the table rules for development and tests: computer
+  // seats at a chosen level, and 3-seat tables.)
   create(user, aiLevel = 'medium', seats = NUM_PLAYERS) {
     if (!user.isAdmin) throw new TableError(403, 'Only an admin can create a game.');
-    if (!LEVELS.includes(aiLevel)) throw new TableError(400, 'Unknown AI level.');
-    if (!PLAYER_COUNTS.includes(seats)) throw new TableError(400, 'A game has 3 or 4 players.');
+    if (this.deps.cfg.devTables) {
+      if (!LEVELS.includes(aiLevel)) throw new TableError(400, 'Unknown AI level.');
+      if (!PLAYER_COUNTS.includes(seats)) throw new TableError(400, 'A game has 3 or 4 players.');
+    } else {
+      if (seats !== NUM_PLAYERS) throw new TableError(400, `A season game has ${NUM_PLAYERS} players.`);
+      aiLevel = 'medium'; // no computer players online: the level is unused, so a stray value is not kept
+    }
+    if (!resolveSeason(this.deps.db, 'current', this.deps.cfg.now())) {
+      throw new TableError(
+        409,
+        'No season is running, so a game cannot be started. Create a season in the Admin area first.',
+      );
+    }
     if (this.table && this.table.status !== 'done') {
       throw new TableError(409, 'A game is already in progress. Only one game can run at a time.');
     }

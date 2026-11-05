@@ -238,6 +238,7 @@ test('texts can be switched off, and the setting is validated', async () => {
 test('in a real game: one text when the turn reaches an absent player, none to someone watching, never any cards', async () => {
   const smsProvider = createSmsProvider({ provider: 'console', quiet: true });
   const ctx = await boot({
+    devTables: true,
     smsProvider,
     rng: mulberry32(5),
     notify: { delayMs: 30, cooldownMs: 60_000, baseUrl: 'https://big2.example.com' },
@@ -263,7 +264,12 @@ test('in a real game: one text when the turn reaches an absent player, none to s
   }
 
   const watching = createSmsProvider({ provider: 'console', quiet: true });
-  const ctx2 = await boot({ smsProvider: watching, rng: mulberry32(5), notify: { delayMs: 30, cooldownMs: 0 } });
+  const ctx2 = await boot({
+    devTables: true,
+    smsProvider: watching,
+    rng: mulberry32(5),
+    notify: { delayMs: 30, cooldownMs: 0 },
+  });
   const abort = new AbortController();
   try {
     const here = await makeUser(ctx2, 'here', { isAdmin: true });

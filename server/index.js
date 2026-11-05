@@ -142,6 +142,8 @@ const parseId = (s) => {
 export function createApp(opts = {}) {
   const cfg = {
     aiDelayMs: opts.aiDelayMs ?? 700,
+    // Off in production. Development and tests turn it on to get computer seats and 3-seat tables online.
+    devTables: !!opts.devTables,
     rng: opts.rng ?? secureRng,
     now: opts.now ?? Date.now,
   };
@@ -447,7 +449,11 @@ export function createApp(opts = {}) {
     if (m === 'POST') checkOrigin(req);
 
     if (p === '/api/config' && m === 'GET') {
-      return sendJson(res, 200, { registrationOpen: registrationOpen(), codeLogin: smsProvider.canSend });
+      return sendJson(res, 200, {
+        registrationOpen: registrationOpen(),
+        codeLogin: smsProvider.canSend,
+        devTables: cfg.devTables,
+      });
     }
     if (p === '/api/register' && m === 'POST') {
       if (!registrationOpen()) throw new HttpError(403, 'Registration is closed. Ask an admin for an account.');
@@ -679,6 +685,7 @@ if (isMain(import.meta.url)) {
   const app = createApp({
     dbFile: env.DB_FILE || path.join(ROOT, 'data', 'big2.db'),
     aiDelayMs: env.AI_DELAY_MS ? Number(env.AI_DELAY_MS) : undefined,
+    devTables: env.DEV_TABLES === '1',
     trustProxy: env.TRUST_PROXY === '1',
     secureCookies: env.SECURE_COOKIES === '1',
     smsProvider,
