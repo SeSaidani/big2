@@ -4,3 +4,5 @@ e2e/out/
 coverage/
 package-lock.json
 *.png
+# Written by tools/fit-deal-model.js, not by hand
+src/stats/deal-model-*.json
