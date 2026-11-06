@@ -30,6 +30,9 @@ export const api = {
   me: () => call('GET', '/api/me'),
   register: (name, password) => call('POST', '/api/register', { name, password }),
   login: (name, password) => call('POST', '/api/login', { name, password }),
+  // My solo games (private to me): report a finished round, and read my table.
+  soloResult: (result) => call('POST', '/api/solo/result', result),
+  soloStats: () => call('GET', '/api/solo/stats'),
   // Turn alerts: the sender's public key and my devices; add or remove this device; send myself a test.
   push: () => call('GET', '/api/push'),
   pushSubscribe: (subscription, label) => call('POST', '/api/push/subscribe', { subscription, label }),

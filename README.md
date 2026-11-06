@@ -20,14 +20,16 @@ until you sign in (a visitor gets only the sign-in page), so make an account fir
 A session lasts 30 days from its last use (using the site renews it, so regular players are not asked again),
 and never more than 180 days from the sign-in.
 
-| Environment variable | Meaning                                                              |
-| -------------------- | -------------------------------------------------------------------- |
-| `PORT`, `HOST`       | Where to listen. `HOST=0.0.0.0` exposes it on the network.           |
-| `DB_FILE`            | SQLite file (default `data/big2.db`).                                |
-| `AI_DELAY_MS`        | Pause before each computer move (default 700).                       |
-| `DEV_TABLES=1`       | Development and tests only: computer seats and 3-seat online tables. |
-| `TRUST_PROXY=1`      | Behind a reverse proxy: take the client IP from `X-Forwarded-For`.   |
-| `SECURE_COOKIES=1`   | Mark the session cookie `Secure` (use once served over HTTPS).       |
+| Environment variable       | Meaning                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `PORT`, `HOST`             | Where to listen. `HOST=0.0.0.0` exposes it on the network.                                        |
+| `DB_FILE`                  | SQLite file (default `data/big2.db`).                                                             |
+| `AI_DELAY_MS`              | Pause before each computer move (default 700).                                                    |
+| `DEV_TABLES=1`             | Development and tests only: computer seats and 3-seat online tables, created and started by hand. |
+| `TABLE_START_DELAY_MS`     | Wait from the fourth person sitting down to the deal (default 10000).                             |
+| `TABLE_NEXT_GAME_DELAY_MS` | How long a result stays up before the next game (default 30000).                                  |
+| `TRUST_PROXY=1`            | Behind a reverse proxy: take the client IP from `X-Forwarded-For`.                                |
+| `SECURE_COOKIES=1`         | Mark the session cookie `Secure` (use once served over HTTPS).                                    |
 
 ## Accounts and admin
 
@@ -85,11 +87,20 @@ Opening an old database erases any phone numbers and text-message records it sti
 
 ## How online games work
 
-- **One game at a time**, created by an admin, and only while a season is running. It is a **season game**: four people,
-  no computer players. Anyone signed in can join it while it is waiting; the host can start it once all four seats have a
-  person. (For computer players, play solo. `DEV_TABLES=1` turns computer seats and 3-seat tables back on for development
-  and tests; production never sets it.)
-- A started game **holds its seats until it finishes or an admin cancels it**. There is no turn timer; the game waits
+- **The table runs itself.** While a season is running there is always one table with four seats and nobody creates or
+  starts a game. People take a seat; when all four are taken (people only, no computer players) the game starts after
+  a 10 second countdown (`TABLE_START_DELAY_MS`). When it ends the result stays up for 30 seconds
+  (`TABLE_NEXT_GAME_DELAY_MS`) and the next game starts with the same four. Someone who presses **Leave table** on the
+  result frees their seat, and the table waits for a replacement. A season that ends **by its dates** lets the game in
+  progress finish and then closes the table (the game counts in no season, as before); an admin's **End now** stops the
+  game in progress (recorded as cancelled, never scored) and closes the table. **Cancel game** clears the table and,
+  with a season running, a fresh empty one opens. A season that starts by its dates opens the table (a clock checks
+  every few seconds). The countdown shows on screen and carries on after a server restart.
+  (`DEV_TABLES=1` is for development and tests: an admin creates the game and starts it by hand, with computer seats
+  and 3-seat tables. Production never sets it.)
+- An admin can **switch to the player view** (account menu) to see the game without the admin controls; it only hides
+  them on this device, and the server still checks everything.
+- A started game **holds its seats until it finishes or an admin cancels it** (you can only leave on the result). There is no turn timer; the game waits
   for anyone who is offline. "Back to lobby" keeps your seat. The live game is saved to SQLite after every change, so
   it **survives a server restart**.
 - A cancelled game is recorded as cancelled and **never counts toward scoring**.
@@ -100,6 +111,11 @@ Opening an old database erases any phone numbers and text-message records it sti
   `RATES`.
 - **Leaderboards are cumulative:** running total points, with games, wins, win % and points per game beside them, and a
   toggle to rank by per-game instead of total. Only online season games count; solo games are not scored.
+- **My solo stats** (account menu): your own finished solo games against the computer, by table size (4 and 3 players)
+  and level, each size's total, each level over both sizes, and an overall row: games, wins, win %, points and points
+  per game. The browser reports each round when it ends (and keeps it and sends it later if the server cannot be
+  reached); the server counts each round once, checks it could be a real result, and only ever returns the signed-in
+  person's own rows. Nobody else, an admin included, can see them, and they are on no leaderboard.
 - **Seasons** are date ranges set by an admin (Admin > Seasons): a name, a start and an optional end, in the admin's local
   time (stored as UTC). A game counts in the season in which it **finished** (`starts <= finished < ends`). Seasons
   cannot overlap; gaps are allowed, and games in a gap count only in **All-time**. Boards can be viewed for the current

@@ -160,6 +160,19 @@ async function main() {
   await P.phone(390, 844);
   await sleep(300);
   await P.shot('3-phone-lobby');
+  // The round buttons stay round on a phone (the 44px touch height used to stretch them into ovals).
+  const round = (id) =>
+    P.ev(
+      `(() => { const r = document.getElementById('${id}').getBoundingClientRect(); return { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 }; })()`,
+    );
+  const help = await round('helpBtn');
+  check('on a phone the ? button is a circle, at least 44px', help.w === help.h && help.w >= 44, JSON.stringify(help));
+  await P.click('helpBtn');
+  await P.waitFor(`document.getElementById('helpDlg').open`, 3000, 'help dialog');
+  const x = await round('helpX');
+  check('and so is the × that closes a dialog', x.w === x.h && x.w >= 44, JSON.stringify(x));
+  await P.ev(`document.getElementById('helpDlg').close()`);
+  check('the top bar still fits the phone width', await P.ev(`document.documentElement.scrollWidth <= innerWidth + 1`));
   await P.ev(`document.getElementById('newLevel').value='easy'; document.getElementById('createBtn').click()`);
   await P.waitFor(`!document.getElementById('waitRoom').hidden`, 8000, 'waiting room (phone)');
   await P.click('startBtn');

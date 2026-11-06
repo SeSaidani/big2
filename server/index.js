@@ -33,6 +33,7 @@ import {
   endSeason,
 } from './db.js';
 import { luckAndSkill } from './stats.js';
+import { recordSolo, soloStats } from './solo.js';
 import * as auth from './auth.js';
 import { Hub } from './hub.js';
 import { Lobby } from './lobby.js';
@@ -159,6 +160,7 @@ export function createApp(opts = {}) {
   const pushHosts = opts.pushHosts ?? []; // extra hosts a test's fake push service listens on
   const notifier = new TurnNotifier({ db, pusher, config: { ...opts.notify, now: cfg.now }, log });
   const pushTestLimit = new auth.RateLimiter(5, 3600 * 1000); // test alerts per person per hour
+  const soloLimit = new auth.RateLimiter(300, 3600 * 1000); // solo results per person per hour
   const lobby = new Lobby({ db, pool, hub, cfg, log, chatLimit, notifier });
   hub.onPresence = (userId) => lobby.presence(userId); // the hub and the lobby need each other
   lobby.restore();
@@ -444,6 +446,17 @@ export function createApp(opts = {}) {
 
     const user = requireUser(req);
     if (p === '/api/me' && m === 'GET') return sendJson(res, 200, { user });
+
+    // ---- my solo games: only ever my own ----
+    if (p === '/api/solo/result' && m === 'POST') {
+      const key = `solo:${user.id}`;
+      if (!soloLimit.allowed(key)) throw new HttpError(429, 'Too many results. Try again later.');
+      soloLimit.record(key);
+      const body = await readJson(req);
+      recordSolo(db, user.id, body, cfg.now());
+      return sendJson(res, 200, soloStats(db, user.id));
+    }
+    if (p === '/api/solo/stats' && m === 'GET') return sendJson(res, 200, soloStats(db, user.id));
 
     // ---- my devices and turn alerts ----
     if (p === '/api/push' && m === 'GET') {

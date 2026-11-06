@@ -56,6 +56,15 @@ input,
   select {
     min-height: 44px;
   }
+
+  /* The round buttons (? and the dialog ×) are 36px circles; the 44px minimum height above would stretch them
+     into ovals, so on a touch screen they grow to 44px in both directions and stay round. (The element in the
+     selector is there so this beats their own width and height, which come later in the file.) */
+  button.help-btn,
+  button.dialog-x {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 button,
@@ -125,11 +134,6 @@ button.ghost {
   gap: 6px;
   align-items: center;
   color: var(--muted);
-}
-
-.record {
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 /* The How to play dialog: a long page that scrolls inside the dialog. */
@@ -1137,10 +1141,6 @@ button.ghost.active {
     height: 30px;
   }
 
-  .record {
-    display: none;
-  }
-
   .layout {
     grid-template-columns: 1fr;
     height: auto;
@@ -1681,4 +1681,21 @@ dialog.alerts {
 
 .ios-steps li {
   margin: 8px 0;
+}
+
+/* ---- my solo stats ---- */
+table.solo-stats .section th {
+  padding-top: 14px;
+  color: var(--accent);
+  text-align: left;
+}
+
+table.solo-stats .total td {
+  font-weight: 700;
+  border-top: 1px solid #2a6a4c;
+}
+
+table.solo-stats td:not(:first-child),
+table.solo-stats th:not(:first-child) {
+  text-align: right;
 }

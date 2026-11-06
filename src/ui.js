@@ -3,6 +3,7 @@
 
 import { isJoker, suitOf, isRedSuit, cardName, sortByRank, sortBySuit } from './cards.js';
 import { cardSVG } from './card-art.js';
+import { scoreRound } from './scoring.js';
 import { classify, describe } from './hands.js';
 import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip } from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
@@ -326,11 +327,6 @@ function renderSelection() {
   $('sortBtn').textContent = `Sort: ${sortMode}`;
 }
 
-function renderRecord() {
-  const rec = JSON.parse(localStorage.getItem('big2.record') || '{"played":0,"won":0}');
-  $('record').textContent = rec.played ? `You've won ${rec.won} of ${rec.played}` : '';
-}
-
 function render() {
   const n = game.hands.length;
   $('seat-2').hidden = n === 3; // the North seat is empty at a table of three
@@ -363,6 +359,7 @@ function renderSoloChip() {
 }
 
 function startGame() {
+  soloGameId = newGameId();
   renderSoloChip();
   gen++;
   pending.clear();
@@ -464,11 +461,14 @@ async function commit(cards) {
 function endRound() {
   const w = game.winner;
   setStatus('');
-  const rec = JSON.parse(localStorage.getItem('big2.record') || '{"played":0,"won":0}');
-  rec.played++;
-  if (w === 0) rec.won++;
-  localStorage.setItem('big2.record', JSON.stringify(rec));
-  renderRecord();
+  // The round is reported to my own solo table (kept and retried if the server cannot be reached).
+  reportSoloResult({
+    clientId: soloGameId,
+    level,
+    players: game.hands.length,
+    won: w === 0,
+    delta: scoreRound(game).delta[0],
+  });
   log(w === 0 ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
@@ -1657,6 +1657,106 @@ const alertsTest = () =>
     if (!r.delivered) throw new Error('The test did not reach any device. Try turning alerts off and on again.');
   }, 'Sent. It should arrive on your phone in a few seconds.');
 
+// ---- my solo stats ----
+// A solo round is reported when it ends. If the server cannot be reached the report waits in this browser (per
+// person) and is sent again later; the server counts each round once however often it is sent.
+let soloGameId = null;
+const newGameId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+const soloQueueKey = () => `big2.soloQueue.${user ? user.id : 'nobody'}`;
+function soloQueue() {
+  try {
+    const q = JSON.parse(localStorage.getItem(soloQueueKey()) || '[]');
+    return Array.isArray(q) ? q : [];
+  } catch {
+    return [];
+  }
+}
+const saveSoloQueue = (q) => localStorage.setItem(soloQueueKey(), JSON.stringify(q.slice(-200)));
+let soloFlushing = false;
+
+function reportSoloResult(result) {
+  if (!user || !result.clientId) return;
+  saveSoloQueue([...soloQueue(), result]);
+  flushSoloResults();
+}
+
+async function flushSoloResults() {
+  if (soloFlushing || !user) return;
+  soloFlushing = true;
+  try {
+    for (let q = soloQueue(); q.length; q = soloQueue()) {
+      try {
+        await api.soloResult(q[0]);
+      } catch (err) {
+        // Out of reach, signed out, or told to slow down: keep it for later. Anything else is a report the
+        // server will never accept, so it is dropped rather than retried for ever.
+        if (!err.status || err.status >= 500 || err.status === 401 || err.status === 429) break;
+      }
+      saveSoloQueue(soloQueue().slice(1));
+    }
+  } finally {
+    soloFlushing = false;
+  }
+}
+
+const pct = (c) => (c.games ? `${Math.round((100 * c.wins) / c.games)}%` : '-');
+const perGame = (c) => (c.games ? signed(c.points / c.games, 1) : '-');
+
+function renderSoloStats(s) {
+  const body = $('soloStatsBody');
+  body.innerHTML = '';
+  const cell = (tr, text) => {
+    const td = document.createElement('td');
+    td.textContent = text;
+    tr.appendChild(td);
+  };
+  const section = (title) => {
+    const tr = document.createElement('tr');
+    tr.className = 'section';
+    const th = document.createElement('th');
+    th.colSpan = 6;
+    th.textContent = title;
+    tr.appendChild(th);
+    body.appendChild(tr);
+  };
+  const row = (label, c, total = false) => {
+    const tr = document.createElement('tr');
+    if (total) tr.className = 'total';
+    cell(tr, label);
+    cell(tr, c.games);
+    cell(tr, c.wins);
+    cell(tr, pct(c));
+    cell(tr, c.games ? signed(c.points, 0) : '-');
+    cell(tr, perGame(c));
+    body.appendChild(tr);
+  };
+  for (const size of [4, 3]) {
+    section(`${size} players`);
+    for (const l of ['easy', 'medium', 'hard']) row(LEVEL_LABEL[l], s.bySize[size][l]);
+    row(`All ${size}-player games`, s.bySize[size].all, true);
+  }
+  section('By level, both table sizes together');
+  for (const l of ['easy', 'medium', 'hard']) row(LEVEL_LABEL[l], s.byLevel[l]);
+  row('Overall', s.overall, true);
+  show('soloStatsEmpty', s.overall.games === 0);
+}
+
+async function openSoloStats() {
+  $('account').open = false;
+  await flushSoloResults(); // what finished a moment ago, or while offline, counts
+  try {
+    renderSoloStats(await api.soloStats());
+  } catch (err) {
+    if (err.status === 401) return sessionLost();
+    $('soloStatsEmpty').textContent = 'Your stats could not be loaded. Try again in a moment.';
+    show('soloStatsEmpty', true);
+  }
+  if (!$('soloStatsDlg').open) $('soloStatsDlg').showModal();
+}
+
 // ---- my password ----
 async function submitPassword() {
   $('pwErr').textContent = '';
@@ -1734,6 +1834,10 @@ $('alertsBannerLater').addEventListener('click', () => {
   show('alertsBanner', false);
 });
 $('iosOk').addEventListener('click', () => $('iosDlg').close());
+$('soloStatsBtn').addEventListener('click', openSoloStats);
+$('endStats').addEventListener('click', openSoloStats);
+$('soloStatsClose').addEventListener('click', () => $('soloStatsDlg').close());
+$('soloStatsX').addEventListener('click', () => $('soloStatsDlg').close());
 $('passwordBtn').addEventListener('click', () => {
   $('pwErr').textContent = '';
   $('pwDlg').showModal();
@@ -1776,7 +1880,7 @@ $('lbViewStats').addEventListener('click', () => {
 // The game is only served to a signed-in user, so this is a check that the session still holds,
 // not a login. Signed in, you land where you left off (online the first time).
 async function boot() {
-  renderRecord();
+  localStorage.removeItem('big2.record'); // the old count kept in this browser: stats live on the server now
   try {
     user = (await api.me()).user;
   } catch (err) {
@@ -1785,6 +1889,7 @@ async function boot() {
   if (user) {
     $('who').textContent = user.name;
     show('account', true);
+    flushSoloResults();
   }
   try {
     devTables = !!(await api.config()).devTables;

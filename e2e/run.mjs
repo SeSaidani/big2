@@ -15,6 +15,7 @@ for (const script of [
   'luck-and-skill.mjs',
   'season-games.mjs',
   'alerts-solo-seasons.mjs',
+  'solo-stats.mjs',
 ]) {
   console.log(`\n=== ${script} ===`);
   const r = spawnSync(process.execPath, [path.join(here, script), ...process.argv.slice(2)], { stdio: 'inherit' });

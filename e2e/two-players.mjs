@@ -41,6 +41,7 @@ async function main() {
   // --- admin signs in and creates a user in the UI ---
   await A.goto(BASE);
   await A.signIn('boss', ADMIN_PW);
+  await A.waitFor(`!document.getElementById('adminBtn').hidden`, 8000, 'the Admin button'); // drawn just after the lobby
   check('admin signs in and sees the Admin button', await A.visible('adminBtn'));
   check(
     'the account menu shows the name and starts closed',

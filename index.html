@@ -92,7 +92,6 @@
           <button type="button" id="modeSolo" class="seg active">Solo</button>
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
-        <span id="record" class="record solo-only"></span>
         <span id="soloChip" class="chip solo-only" title="The settings of this game"></span>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
@@ -100,6 +99,7 @@
       <details id="account" class="account" hidden>
         <summary id="who" aria-label="Account menu"></summary>
         <div class="menu">
+          <button type="button" id="soloStatsBtn" class="ghost">My solo stats</button>
           <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
           <button type="button" id="viewBtn" class="ghost online-only" hidden>Switch to player view</button>
           <button type="button" id="alertsBtn" class="ghost online-only" hidden>Turn alerts</button>
@@ -389,6 +389,7 @@
         <div class="row">
           <button type="button" id="againBtn" class="primary">Play again</button>
           <button type="button" id="againNewBtn" class="solo-only">Change level or players</button>
+          <button type="button" id="endStats" class="ghost solo-only">My solo stats</button>
           <button type="button" id="endClose" class="ghost solo-only">Close</button>
           <button type="button" id="endOnline" class="ghost solo-only">Go online</button>
           <button type="button" id="endLeave" class="online-only">Leave table</button>
@@ -462,6 +463,35 @@
         </ul>
       </details>
       <div class="row"><button type="button" id="alertsClose">Close</button></div>
+    </dialog>
+
+    <dialog id="soloStatsDlg" class="help">
+      <button type="button" id="soloStatsX" class="ghost dialog-x" aria-label="Close" title="Close">×</button>
+      <h2>My solo stats</h2>
+      <p class="muted">
+        Your finished solo games against the computer. Only you can see this, and solo games are not on any leaderboard.
+        Points are what you won or paid at the end of each round.
+      </p>
+      <p id="soloStatsEmpty" class="muted" hidden>No solo games yet: finish one and it appears here.</p>
+      <div class="ls-scroll">
+        <table class="ls solo-stats">
+          <thead>
+            <tr>
+              <th>Players and level</th>
+              <th>Games</th>
+              <th>Wins</th>
+              <th>Win %</th>
+              <th>Points</th>
+              <th>Per game</th>
+            </tr>
+          </thead>
+          <tbody id="soloStatsBody"></tbody>
+        </table>
+      </div>
+      <p class="muted">
+        Playing at random you would win about 1 game in 4 at a table of four, and 1 in 3 at a table of three.
+      </p>
+      <div class="row"><button type="button" id="soloStatsClose">Close</button></div>
     </dialog>
 
     <dialog id="iosDlg" class="alerts">
@@ -559,16 +589,22 @@
       <h3>Solo</h3>
       <p>
         Play against the computer, any time. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The
-        settings are fixed for the whole game. Solo games are for practice: they are not scored on the leaderboard.
+        settings are fixed for the whole game. Solo games are for practice: they are not on the leaderboard, but your
+        own results are kept: under your name, My solo stats.
       </p>
       <h3>Online</h3>
       <ul>
         <li>
-          One game runs at a time. An admin creates it, while a season is running, and only an admin can cancel it.
+          While a season is running there is always a table. Take a seat: when all 4 seats are taken the game starts by
+          itself a few seconds later. There are no computer players online. For those, play Solo.
         </li>
         <li>
-          A season game needs 4 people. It starts when every seat is taken by a person: there are no computer players
-          online. For those, play Solo.
+          When a game ends, the result stays up for half a minute and then the next game starts with the same people.
+          Press Leave table on the result if you want to stop; your seat is then open for someone else.
+        </li>
+        <li>
+          Nobody starts or creates games. An admin runs the season: ending it stops the game in progress (it is not
+          scored). A season that reaches its end date lets the game in progress finish and then stops.
         </li>
         <li>
           Leaving to the lobby keeps your seat. Nobody is timed out: if a player is away, the game waits for them.

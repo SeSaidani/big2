@@ -82,6 +82,19 @@ CREATE TABLE IF NOT EXISTS push_log (
   sent INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS push_log_user ON push_log(user_id, sent);
+-- A person's finished solo rounds against the computer, reported by their browser: only ever read back for that
+-- person. client_id makes a retried report count once.
+CREATE TABLE IF NOT EXISTS solo_games (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id TEXT NOT NULL,
+  level TEXT NOT NULL CHECK (level IN ('easy', 'medium', 'hard')),
+  players INTEGER NOT NULL CHECK (players IN (3, 4)),
+  won INTEGER NOT NULL CHECK (won IN (0, 1)),
+  delta INTEGER NOT NULL,
+  ended INTEGER NOT NULL,
+  UNIQUE (user_id, client_id)
+);
 -- What a finished game was dealt and how it was played, so it can be studied or replayed
 -- later. One row per seat, and one per move (cards is a JSON array, NULL for a pass).
 CREATE TABLE IF NOT EXISTS game_deals (
