@@ -340,7 +340,7 @@ test('ending a season: it stops now, the next can start, and the cases that make
   db.close();
 });
 
-test('API: an admin ends the running season at once; nobody else can; it is audited; then no online game can start', async () => {
+test('API: an admin ends the running season at once; nobody else can; it is audited; then there is no table', async () => {
   const ctx = await boot();
   try {
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
@@ -360,15 +360,13 @@ test('API: an admin ends the running season at once; nobody else can; it is audi
       recentAudit(ctx.app.db, 10).some((e) => e.action === 'end_season' && e.target === season.name),
       'ending a season is in the audit log',
     );
-    const create = await admin.req('POST', '/api/game', {});
-    assert.equal(create.status, 409);
-    assert.match(create.json.error, /No season is running/);
+    assert.equal(ctx.app.lobby.table, null, 'with no season running there is no table to sit at');
     // With no season the boards and the seasons list still answer, and a new season can be made at once.
     assert.equal((await admin.req('GET', '/api/leaderboard')).status, 200);
     assert.equal((await admin.req('GET', '/api/stats')).status, 200);
     const made = await admin.req('POST', '/api/admin/seasons', { name: 'Fresh', starts: Date.now(), ends: null });
     assert.equal(made.status, 201, JSON.stringify(made.json));
-    assert.equal((await admin.req('POST', '/api/game', {})).status, 201);
+    assert.equal(ctx.app.lobby.table.status, 'waiting', 'a season running now opens the table at once');
   } finally {
     await ctx.app.close();
   }

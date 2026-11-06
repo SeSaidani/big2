@@ -156,15 +156,17 @@ test('overview, settings and audit endpoints', async () => {
     let o = (await admin.req('GET', '/api/admin/overview')).json;
     assert.equal(o.stats.users, 2);
     assert.equal(o.registrationOpen, false);
-    assert.equal(o.game, null);
+    assert.equal(o.game.status, 'waiting', 'a season is running, so the table is open');
+    assert.equal(o.game.humans, 0);
     assert.equal((await admin.req('POST', '/api/admin/settings', { registrationOpen: 'yes' })).status, 400);
     await admin.req('POST', '/api/admin/settings', { registrationOpen: true });
     o = (await admin.req('GET', '/api/admin/overview')).json;
     assert.equal(o.registrationOpen, true);
-    await admin.req('POST', '/api/game', { aiLevel: 'easy' });
+    const before = ctx.app.lobby.table.id;
+    assert.equal((await admin.req('POST', '/api/admin/game/cancel', {})).status, 200);
+    // Cancelling clears the table, and with a season running a fresh empty one opens straight away.
+    assert.notEqual(ctx.app.lobby.table.id, before);
     assert.equal((await admin.req('GET', '/api/admin/overview')).json.game.status, 'waiting');
-    await admin.req('POST', '/api/admin/game/cancel', {});
-    assert.equal((await admin.req('POST', '/api/admin/game/cancel', {})).status, 404);
     const entries = (await admin.req('GET', '/api/admin/audit?limit=5')).json.entries;
     assert.deepEqual(entries.map((e) => e.action).slice(0, 2), ['cancel_game', 'set_registration']);
     assert.ok(entries.length <= 5);

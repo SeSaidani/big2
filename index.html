@@ -101,6 +101,7 @@
         <summary id="who" aria-label="Account menu"></summary>
         <div class="menu">
           <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
+          <button type="button" id="viewBtn" class="ghost online-only" hidden>Switch to player view</button>
           <button type="button" id="alertsBtn" class="ghost online-only" hidden>Turn alerts</button>
           <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
           <button type="button" id="logoutBtn" class="ghost">Log out</button>
@@ -255,6 +256,7 @@
               Chat
             </button>
           </div>
+          <p id="waitCount" class="alerts-status"></p>
           <p id="waitMsg" class="bad"></p>
         </section>
       </main>
@@ -382,6 +384,7 @@
       <div class="panel">
         <h2 id="endTitle">Round over</h2>
         <div id="endHands"></div>
+        <p id="endCount" class="alerts-status"></p>
         <p id="endNote" class="muted"></p>
         <div class="row">
           <button type="button" id="againBtn" class="primary">Play again</button>

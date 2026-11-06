@@ -136,6 +136,9 @@ export function createApp(opts = {}) {
     devTables: !!opts.devTables,
     rng: opts.rng ?? secureRng,
     now: opts.now ?? Date.now,
+    startDelayMs: opts.startDelayMs ?? 10_000, // from the fourth person sitting down to the deal
+    nextGameDelayMs: opts.nextGameDelayMs ?? 30_000, // how long the results stay up before the next game
+    clockMs: opts.clockMs ?? 5000, // how often the table checks the seasons
   };
   const ownsDb = !opts.db;
   const db = opts.db ?? openDb(opts.dbFile ?? ':memory:');
@@ -159,6 +162,7 @@ export function createApp(opts = {}) {
   const lobby = new Lobby({ db, pool, hub, cfg, log, chatLimit, notifier });
   hub.onPresence = (userId) => lobby.presence(userId); // the hub and the lobby need each other
   lobby.restore();
+  lobby.startClock();
   const loginLimit = new auth.RateLimiter(10, 15 * 60 * 1000);
   const registerLimit = new auth.RateLimiter(10, 3600 * 1000);
 
@@ -348,6 +352,7 @@ export function createApp(opts = {}) {
       const body = await readJson(req);
       const season = createSeason(db, body);
       audit(db, admin.id, 'create_season', season.name, seasonDetail(season));
+      lobby.reconcile(); // a season that is running now opens the table
       return sendJson(res, 201, { season });
     }
     const sea = /^\/api\/admin\/seasons\/(\d+)(\/delete|\/end)?$/.exec(p);
@@ -355,18 +360,27 @@ export function createApp(opts = {}) {
       const id = parseId(sea[1]);
       if (sea[2] === '/end') {
         const season = endSeason(db, id, cfg.now());
-        audit(db, admin.id, 'end_season', season.name, seasonDetail(season));
+        const was = lobby.stopForSeasonEnd();
+        audit(
+          db,
+          admin.id,
+          'end_season',
+          season.name,
+          seasonDetail(season) + (was === 'playing' ? '; the game in progress was stopped, not scored' : ''),
+        );
         return sendJson(res, 200, { season });
       }
       if (sea[2]) {
         const before = listSeasons(db, cfg.now()).find((s) => s.id === id);
         deleteSeason(db, id);
+        lobby.reconcile();
         audit(db, admin.id, 'delete_season', before ? before.name : String(id), before ? seasonDetail(before) : null);
         return sendJson(res, 200, { ok: true });
       }
       const body = await readJson(req);
       const season = updateSeason(db, id, body);
       audit(db, admin.id, 'update_season', season.name, seasonDetail(season));
+      lobby.reconcile();
       return sendJson(res, 200, { season });
     }
     if (p === '/api/admin/audit' && m === 'GET') {
@@ -579,6 +593,8 @@ if (isMain(import.meta.url)) {
     trustProxy: env.TRUST_PROXY === '1',
     secureCookies: env.SECURE_COOKIES === '1',
     publicUrl: env.PUBLIC_URL || '',
+    ...(env.TABLE_START_DELAY_MS ? { startDelayMs: Number(env.TABLE_START_DELAY_MS) } : {}),
+    ...(env.TABLE_NEXT_GAME_DELAY_MS ? { nextGameDelayMs: Number(env.TABLE_NEXT_GAME_DELAY_MS) } : {}),
     notify: {
       ...(env.PUSH_FIRST_AFTER_MS ? { firstAfterMs: Number(env.PUSH_FIRST_AFTER_MS) } : {}),
       ...(env.PUSH_SECOND_AFTER_MS ? { secondAfterMs: Number(env.PUSH_SECOND_AFTER_MS) } : {}),

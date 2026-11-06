@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { chooseMove } from '../src/ai/agents.js';
 import { mulberry32 } from '../src/cards.js';
-import { loadLive, openDb, loadGameRecord, deleteSeason, createSeason } from '../server/db.js';
+import { loadLive, openDb, loadGameRecord } from '../server/db.js';
 import { replayRecord } from '../src/game.js';
 import {
   PASSWORD,
@@ -196,7 +196,7 @@ test('one account cannot hold unlimited event streams open', async () => {
 });
 
 test('only an admin creates a game, and only one game exists at a time', async () => {
-  const ctx = await boot();
+  const ctx = await boot({ devTables: true });
   try {
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
     const pleb = await makeUser(ctx, 'pleb');
@@ -218,7 +218,7 @@ test('only an admin creates a game, and only one game exists at a time', async (
 });
 
 test('four humans play a full game: no view leaks a hand, result is zero-sum and saved', async () => {
-  const ctx = await boot({ rng: mulberry32(7) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(7) });
   try {
     const clients = await seatPlayers(ctx, 'full');
     for (const c of clients) driveEasy(c, c.ev, () => tableOf(ctx).game);
@@ -323,62 +323,6 @@ test('a game with computer players is saved, but it is on no board and not in Lu
   }
 });
 
-test('a season game: four people, no computer players, started only when the table is full', async () => {
-  const ctx = await boot({ rng: mulberry32(51) });
-  try {
-    const admin = await makeUser(ctx, 'boss', { isAdmin: true });
-    assert.equal((await admin.req('POST', '/api/game', { seats: 3 })).status, 400, 'a season game has 4 players');
-    assert.equal(
-      (await admin.req('POST', '/api/game', { aiLevel: 'hard' })).status,
-      201,
-      'the AI level is simply unused',
-    );
-    const table = tableOf(ctx);
-    assert.equal(table.seats.length, 4);
-    assert.equal(table.aiLevel, 'medium');
-
-    // Alone, and then with two more, the host cannot start: every seat needs a person.
-    let start = await admin.req('POST', '/api/game/start');
-    assert.equal(start.status, 409);
-    assert.match(start.json.error, /3 more players are needed/);
-    for (const name of ['pat', 'quinn']) {
-      assert.equal((await (await makeUser(ctx, name)).req('POST', '/api/game/join')).status, 200);
-    }
-    start = await admin.req('POST', '/api/game/start');
-    assert.equal(start.status, 409);
-    assert.match(start.json.error, /1 more player is needed/);
-    assert.equal(table.status, 'waiting', 'nothing started');
-    assert.equal(table.seats.filter((x) => x.kind === 'ai').length, 0, 'no computer seat was added');
-
-    // The fourth person joins, and now it starts, with four people and no computer.
-    assert.equal((await (await makeUser(ctx, 'rosa')).req('POST', '/api/game/join')).status, 200);
-    assert.equal((await admin.req('POST', '/api/game/start')).status, 200);
-    assert.equal(table.status, 'playing');
-    assert.deepEqual(
-      table.seats.map((x) => x.kind),
-      ['human', 'human', 'human', 'human'],
-    );
-  } finally {
-    await ctx.app.close();
-  }
-});
-
-test('an online game can only be created while a season is running', async () => {
-  const ctx = await boot();
-  try {
-    const admin = await makeUser(ctx, 'boss', { isAdmin: true });
-    deleteSeason(ctx.app.db, 1); // the automatic Season 1: now there is a gap with no season
-    const refused = await admin.req('POST', '/api/game', { seats: 4 });
-    assert.equal(refused.status, 409);
-    assert.match(refused.json.error, /No season is running/);
-    assert.equal(tableOf(ctx), null);
-    createSeason(ctx.app.db, { name: 'Autumn', starts: Date.now() - 1000, ends: null });
-    assert.equal((await admin.req('POST', '/api/game', { seats: 4 })).status, 201);
-  } finally {
-    await ctx.app.close();
-  }
-});
-
 test('the server says whether the development table rules are on, and they are off by default', async () => {
   for (const [opts, expected] of [
     [{}, false],
@@ -394,7 +338,7 @@ test('the server says whether the development table rules are on, and they are o
 });
 
 test('rejected moves change nothing; join rules; reconnect resumes the current view', async () => {
-  const ctx = await boot({ rng: mulberry32(11) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(11) });
   try {
     const clients = await seatPlayers(ctx, 'rej');
     const table = tableOf(ctx);
@@ -492,7 +436,7 @@ test('leaving: waiting room frees the seat; a started game holds it', async () =
 });
 
 test('the whole table disappears when the last person leaves the waiting room', async () => {
-  const ctx = await boot();
+  const ctx = await boot({ devTables: true });
   try {
     const admin = await makeUser(ctx, 'solo', { isAdmin: true });
     await admin.req('POST', '/api/game', { aiLevel: 'easy' });
@@ -506,7 +450,7 @@ test('the whole table disappears when the last person leaves the waiting room', 
 });
 
 test('an admin cancel ends a running game, unscored; only an admin can do it', async () => {
-  const ctx = await boot({ rng: mulberry32(9) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(9) });
   try {
     const clients = await seatPlayers(ctx, 'cx');
     await clients[0].req('POST', '/api/game/start');
@@ -543,7 +487,7 @@ test('an admin cancel ends a running game, unscored; only an admin can do it', a
 });
 
 test('chat: needs two humans, is validated and rate limited, and history reaches reconnecting clients', async () => {
-  const ctx = await boot({ rng: mulberry32(2) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(2) });
   try {
     const clients = await seatPlayers(ctx, 'ch', 1);
     const [a] = clients;

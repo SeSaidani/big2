@@ -61,6 +61,8 @@ let chatMsgs = [];
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
 let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
+// An admin can look at the game as a player sees it (no admin controls); the choice is kept on this device.
+const adminUi = () => !!user && user.isAdmin && localStorage.getItem('big2.view') !== 'player';
 let devTables = false; // the server's development switch (computer seats and 3-seat tables online); off in production
 let editingSeason = null;
 
@@ -653,7 +655,9 @@ function beginOnline() {
   show('account', true);
   show('passwordBtn', true);
   show('alertsBtn', true);
-  show('adminBtn', user.isAdmin);
+  show('adminBtn', adminUi());
+  show('viewBtn', user.isAdmin);
+  renderViewBtn();
   adminView = false;
   viewingLobby = false;
   table = null;
@@ -736,6 +740,35 @@ function sessionLost() {
 
 // ---- which screen is showing ----
 // table: the game table; lobby: sign-in home or the waiting room; admin.
+// "The game starts in 7s": counted down in the browser from the moment the server's view arrived.
+let countdownTimer = null;
+function renderCountdown() {
+  const t = table;
+  let line = '';
+  if (t && t.next) {
+    const s = Math.max(0, Math.ceil((t.next.deadline - Date.now()) / 1000));
+    line =
+      t.next.kind === 'start'
+        ? `The game starts in ${s}s.`
+        : `The next game starts in ${s}s, with the same players if you stay seated.`;
+  }
+  $('waitCount').textContent = t && t.status === 'waiting' ? line : '';
+  $('endCount').textContent = t && t.status === 'done' ? line : '';
+}
+function syncCountdown() {
+  clearInterval(countdownTimer);
+  countdownTimer = null;
+  if (table && table.next) {
+    table.next.deadline = Date.now() + table.next.ms;
+    countdownTimer = setInterval(renderCountdown, 500);
+  }
+  renderCountdown();
+}
+
+function renderViewBtn() {
+  $('viewBtn').textContent = adminUi() ? 'Switch to player view' : 'Switch to admin view';
+}
+
 function route() {
   if (mode !== 'online' || !user) return;
   const seated = !!table;
@@ -764,19 +797,34 @@ function renderLobbyHome() {
     if (cls) p.className = cls;
     box.appendChild(p);
   };
-  // A finished round's result does not block a new game (the server replaces it).
-  show('createRow', !!user.isAdmin && (!g || g.status === 'done'));
+  // Only with the development rules does an admin create games by hand; otherwise the table runs itself.
+  show('createRow', devTables && adminUi() && (!g || g.status === 'done'));
   if (!g) {
-    if (!user.isAdmin) line('No game is running. An admin starts the games.', 'muted');
+    if (devTables) {
+      if (!adminUi()) line('No game is running. An admin starts the games.', 'muted');
+    } else {
+      line(
+        adminUi()
+          ? 'No season is running, so there is no table. Create a season under Admin, then Seasons.'
+          : 'There is no table right now: games run while a season is running.',
+        'muted',
+      );
+    }
     return;
   }
   // The current game, as a card: who is hosting, where it is up to, who is in, and what the empty seats get.
-  const state = { waiting: 'Waiting to start', playing: 'In progress', done: 'Just finished' }[g.status] || g.status;
+  const state = devTables
+    ? { waiting: 'Waiting to start', playing: 'In progress', done: 'Just finished' }[g.status] || g.status
+    : {
+        waiting: g.humans === g.seats ? 'Starting' : 'Waiting for players',
+        playing: 'In progress',
+        done: 'Just finished: the next game starts soon',
+      }[g.status] || g.status;
   const empty = g.seats - g.humans;
   const facts = document.createElement('dl');
   facts.className = 'facts';
   for (const [label, value] of [
-    ['Host', g.host],
+    ...(devTables ? [['Host', g.host]] : []),
     ['Status', state],
     ['Table', `${g.seats} seats`],
     ['Players', `${g.players.length ? g.players.join(', ') : 'nobody yet'} (${g.humans} of ${g.seats})`],
@@ -812,11 +860,16 @@ function renderLobbyHome() {
   } else if (g.status === 'waiting') {
     const b = document.createElement('button');
     b.className = 'primary';
-    b.textContent = 'Join game';
+    b.textContent = devTables ? 'Join game' : 'Take a seat';
     b.addEventListener('click', joinGame);
     row.appendChild(b);
   } else {
-    line('This game is already running, so it cannot be joined. Watch for the next one.', 'muted');
+    line(
+      devTables
+        ? 'This game is already running, so it cannot be joined. Watch for the next one.'
+        : 'A game is in progress. When it ends the seats open up, or take one as soon as someone leaves.',
+      'muted',
+    );
   }
   box.appendChild(row);
 }
@@ -825,7 +878,7 @@ function renderWaitRoom(t) {
   const needed = t.seats.filter((s) => s.kind === 'empty').length;
   $('waitInfo').textContent = devTables
     ? `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI, and a game with computer players does not count on the leaderboard.`
-    : `Host: ${t.host}. This is a season game: it starts when all ${t.seats.length} seats are taken by people, with no computer players.`;
+    : `This is a season game: it starts by itself a few seconds after all ${t.seats.length} seats are taken by people, with no computer players. When it ends the next one follows with the same people.`;
   const ul = $('waitSeats');
   ul.innerHTML = '';
   t.seats.forEach((s, i) => {
@@ -837,18 +890,19 @@ function renderWaitRoom(t) {
     if (empty) li.className = 'muted';
     ul.appendChild(li);
   });
-  show('startBtn', t.isHost);
+  show('startBtn', devTables && t.isHost); // production games start by themselves
   $('startBtn').disabled = !devTables && needed > 0; // every seat needs a person
   if (!$('waitMsg').textContent || $('waitMsg').className === 'muted') {
     const more = `${needed} more ${needed === 1 ? 'player' : 'players'}`;
-    $('waitMsg').textContent =
-      !devTables && needed > 0
-        ? t.isHost
-          ? `Waiting for ${more} before you can start.`
-          : `Waiting for ${more} to join.`
+    $('waitMsg').textContent = devTables
+      ? needed > 0 && !t.isHost
+        ? `Waiting for ${more} to join.`
         : t.isHost
           ? ''
-          : 'Waiting for the host to start.';
+          : 'Waiting for the host to start.'
+      : needed > 0
+        ? `Waiting for ${more} to join.`
+        : '';
     $('waitMsg').className = 'muted';
   }
 }
@@ -1037,6 +1091,7 @@ function onTable(t) {
   acceptAny = false;
   const fresh = !prev || prev.id !== t.id || (prev.status !== 'playing' && t.status === 'playing');
   table = t;
+  syncCountdown();
   if (t.status === 'waiting') {
     if (fresh || !prev) $('waitMsg').textContent = '';
     return route();
@@ -1151,10 +1206,10 @@ function endOnlineRound(t, alreadyShown) {
   if (r && r.multiplier > 1) notes.push('Going out with a straight flush or five of a kind doubles every payment.');
   if (r && !r.saved) notes.push('This result could not be saved to the leaderboard.');
   else if (r && r.hasAi) notes.push('This game had computer players, so it is not on the leaderboard.');
-  if (!t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
+  if (devTables && !t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
   $('endNote').className = 'muted';
   $('endNote').textContent = notes.join(' ');
-  show('againBtn', t.isHost);
+  show('againBtn', devTables && t.isHost); // production games follow on by themselves
 }
 
 async function sendMove(cards) {
@@ -1372,14 +1427,16 @@ function renderAdmin(o, users, entries) {
     p.textContent = 'No game is running.';
     box.appendChild(p);
   } else {
-    p.textContent = `${o.game.host}'s game (${o.game.status}). Players: ${o.game.players.join(', ') || 'nobody'}. ${o.game.aiLevel} AI.`;
+    p.textContent = devTables
+      ? `${o.game.host}'s game (${o.game.status}). Players: ${o.game.players.join(', ') || 'nobody'}. ${o.game.aiLevel} AI.`
+      : `The table (${o.game.status}). Players: ${o.game.players.join(', ') || 'nobody'}.`;
     box.appendChild(p);
     const note = document.createElement('p');
     note.className = 'muted';
     note.textContent =
       o.game.status === 'playing'
         ? 'Cancelling a game in progress ends it for everyone and it is not scored.'
-        : 'Cancelling clears the table.';
+        : 'Cancelling clears the table' + (devTables ? '.' : ', and a fresh one opens while a season is running.');
     box.append(
       note,
       armedButton('Cancel game', () => adminDo(() => api.admin.cancelGame())),
@@ -1646,6 +1703,14 @@ $('logoutBtn').addEventListener('click', async () => {
     /* already signed out */
   }
   location.reload(); // the sign-in page is all that is served now
+});
+$('viewBtn').addEventListener('click', () => {
+  localStorage.setItem('big2.view', adminUi() ? 'player' : 'admin');
+  $('account').open = false;
+  adminView = false;
+  show('adminBtn', adminUi());
+  renderViewBtn();
+  route();
 });
 $('adminBtn').addEventListener('click', () => {
   adminView = !adminView;

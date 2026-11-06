@@ -57,8 +57,12 @@ export class Table {
     this.timer = null;
     this.result = null;
     this.startedAt = 0;
-    this.turnSince = 0; // when the turn passed to whoever holds it (saved, so texts survive a restart)
+    this.turnSince = 0; // when the turn passed to whoever holds it (saved, so alerts survive a restart)
     this.chat = [];
+    // A production table runs itself (see #autoCheck): what it is counting down to, and when.
+    this.autoTimer = null;
+    this.autoKind = null; // 'start' (four seated) | 'next' (a game just ended)
+    this.autoAt = null;
   }
 
   static human(user) {
@@ -75,6 +79,8 @@ export class Table {
       result: data.result,
       startedAt: data.startedAt,
       turnSince: data.turnSince ?? deps.cfg.now(), // games saved before this was recorded
+      autoKind: data.autoKind ?? null,
+      autoAt: data.autoAt ?? null,
       chat: data.chat || [],
       version: data.version + 1, // clients reconnecting after a restart must not ignore the first view
     });
@@ -92,14 +98,17 @@ export class Table {
       result: this.result,
       startedAt: this.startedAt,
       turnSince: this.turnSince,
+      autoKind: this.autoKind,
+      autoAt: this.autoAt,
       chat: this.chat,
       version: this.version,
     };
   }
 
-  // After a restart: computer seats carry on.
+  // After a restart: computer seats carry on, and a countdown that was running carries on from its saved moment.
   resume() {
     this.#schedule();
+    this.#autoCheck();
   }
 
   seatOf(userId) {
@@ -121,6 +130,7 @@ export class Table {
     const i = this.seats.findIndex((s) => s.kind === 'empty');
     if (i < 0) throw new TableError(409, 'That table is full.');
     this.seats[i] = Table.human(user);
+    this.#autoCheck();
     this.#changed(true);
   }
 
@@ -135,6 +145,11 @@ export class Table {
       );
     }
     this.seats[i] = EMPTY;
+    if (this.deps.auto) {
+      // Nobody hosts a production table and an empty one just waits: leaving only frees the seat.
+      this.#autoCheck();
+      return this.#changed(true);
+    }
     const remaining = this.humans();
     if (!remaining.length) return this.close();
     if (this.hostId === userId) this.hostId = remaining[0].userId;
@@ -152,6 +167,11 @@ export class Table {
         `Every seat needs a person: ${empty} more ${empty === 1 ? 'player is' : 'players are'} needed.`,
       );
     }
+    this.#begin();
+  }
+
+  // Deals the game. Empty seats (only ever in development) are played by the computer.
+  #begin() {
     let bots = 0;
     this.seats = this.seats.map((s) => {
       if (s.kind !== 'empty') return s;
@@ -221,6 +241,7 @@ export class Table {
   close() {
     if (this.status === 'closed') return;
     clearTimeout(this.timer);
+    clearTimeout(this.autoTimer);
     this.token++;
     this.status = 'closed';
     this.deps.onClose(this);
@@ -229,6 +250,7 @@ export class Table {
   // Stop moving without ending the game (the process is shutting down).
   halt() {
     clearTimeout(this.timer);
+    clearTimeout(this.autoTimer);
     this.token++;
   }
 
@@ -259,6 +281,72 @@ export class Table {
     if (persist) this.deps.persist(this);
     this.deps.onView(this);
     if (structural) this.deps.onList();
+  }
+
+  // A production table runs itself: four people seated start a game after a short wait (startDelayMs), and a
+  // finished game is followed, after the results have been on screen for a while (nextGameDelayMs), by the next
+  // one with the same people, if a season is still running. Called whenever the seats or the status change.
+  #autoCheck() {
+    if (!this.deps.auto || this.status === 'closed') return;
+    if (this.status === 'done' && !this.humans().length) return this.#toWaiting(); // everybody left the results
+    const full = this.seats.every((s) => s.kind === 'human');
+    const kind = this.status === 'waiting' && full ? 'start' : this.status === 'done' ? 'next' : null;
+    if (!kind) {
+      clearTimeout(this.autoTimer);
+      this.autoTimer = null;
+      this.autoKind = null;
+      this.autoAt = null;
+      return;
+    }
+    if (this.autoKind === kind && this.autoTimer) return; // already counting down
+    const cfg = this.deps.cfg;
+    // After a restart the saved moment still stands.
+    const keep = this.autoKind === kind && this.autoAt;
+    const at = keep ? this.autoAt : cfg.now() + (kind === 'start' ? cfg.startDelayMs : cfg.nextGameDelayMs);
+    clearTimeout(this.autoTimer);
+    this.autoKind = kind;
+    this.autoAt = at;
+    this.autoTimer = setTimeout(
+      () => this.#guarded(Promise.resolve().then(() => this.#fire(kind))),
+      Math.max(0, at - cfg.now()),
+    );
+    this.autoTimer.unref?.();
+  }
+
+  #fire(kind) {
+    this.autoTimer = null;
+    this.autoKind = null;
+    this.autoAt = null;
+    if (this.status === 'closed') return;
+    const full = this.seats.every((s) => s.kind === 'human');
+    if (kind === 'start') {
+      if (this.status === 'waiting' && full) this.#begin();
+      else this.#autoCheck();
+      return;
+    }
+    if (this.status !== 'done') return;
+    if (!this.deps.seasonRunning()) return this.close(); // the season is over: no next game
+    if (full) return this.#newRound();
+    this.#toWaiting(); // someone left the results: wait for a replacement
+  }
+
+  // The next game, with the same four people.
+  #newRound() {
+    this.game = newGame(this.deps.cfg.rng, null, this.seats.length);
+    this.result = null;
+    this.status = 'playing';
+    this.startedAt = this.deps.cfg.now();
+    this.#commit(true);
+  }
+
+  #toWaiting() {
+    this.game = null;
+    this.result = null;
+    this.status = 'waiting';
+    this.token++;
+    clearTimeout(this.timer);
+    this.#autoCheck();
+    this.#changed(true);
   }
 
   // Computer seats move after a short pause; a human seat just waits.
@@ -340,6 +428,7 @@ export class Table {
       this.deps.log('Could not save game', err);
     }
     this.result = { winner: r.winner, multiplier: r.multiplier, delta: r.delta, payments: r.payments, hasAi, saved };
+    this.#autoCheck();
     this.#changed(true);
   }
 
@@ -374,6 +463,12 @@ export class Table {
           }
         : null,
       result: this.result,
+      // ms is what is left on the server's clock: the browser counts down from when it receives this, so a
+      // phone with the wrong time still shows the right number of seconds.
+      next:
+        this.autoKind && this.autoAt
+          ? { kind: this.autoKind, at: this.autoAt, ms: Math.max(0, this.autoAt - this.deps.cfg.now()) }
+          : null,
       hands: this.status === 'done' ? g.hands.map((h) => h.slice()) : null,
     };
   }
