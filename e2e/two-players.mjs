@@ -194,7 +194,7 @@ async function main() {
   const driving = Promise.all([drive(A, stop), drive(B, stop)]);
   const watch = async () => {
     while (moves < 8) await sleep(100);
-    await B.click('homeBtn');
+    await B.click('lobbyBtn');
     await B.waitFor(
       `!document.getElementById('lobby').hidden && [...document.querySelectorAll('#gameBox button')].some(b => b.textContent === 'Rejoin your game')`,
       8000,

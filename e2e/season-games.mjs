@@ -169,22 +169,22 @@ async function main() {
   );
   check('the four seated people got a game without anyone pressing Start', true);
 
-  // ---- getting back to the online home from a game in progress: the seat is kept, and it says if it is your move ----
+  // ---- getting back to the lobby from a game in progress: the seat is kept, and it says if it is your move ----
   check(
-    'the table has an Online home button in its corner (and the old Back to lobby is gone)',
-    await A.ev(`getComputedStyle(${byId('homeBtn')}).display !== 'none' && !document.getElementById('leaveBtn')`),
+    'the table has a Lobby button in its corner (and the old Back to lobby is gone)',
+    await A.ev(`getComputedStyle(${byId('lobbyBtn')}).display !== 'none' && !document.getElementById('leaveBtn')`),
   );
   const seatKept = () =>
     A.ev(`fetch('/api/game').then((r) => r.json()).then((j) => !!j.table && j.table.status === 'playing')`);
   const myMove = await A.ev(`fetch('/api/game').then((r) => r.json()).then((j) => j.table.game.turn === j.table.you)`);
-  await A.click('homeBtn');
-  await A.waitFor(`!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`, 5000, 'the online home');
+  await A.click('lobbyBtn');
+  await A.waitFor(`!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`, 5000, 'the lobby');
   check(
-    'the home button goes to the online home and offers to rejoin the game',
+    'the Lobby button goes to the lobby and offers to rejoin the game',
     (await A.text('gameBox')).includes('Rejoin your game'),
   );
   check(
-    'it says it is your turn exactly when it is, on the home screen and as a dot on Online',
+    'it says it is your turn exactly when it is, in the lobby and as a dot on Online',
     (await A.ev(`!!document.querySelector('#gameBox .turn-note')`)) === myMove &&
       (await A.ev(`${byId('modeOnline')}.classList.contains('attention')`)) === myMove,
     `my move: ${myMove}`,
@@ -193,17 +193,18 @@ async function main() {
   await A.clickButton('#gameBox', 'Rejoin your game');
   await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table');
   await A.click('modeOnline');
-  await A.waitFor(
-    `!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`,
-    5000,
-    'the online home from the table',
-  );
+  await A.waitFor(`!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`, 5000, 'the lobby from the table');
   check('the Online button also goes home from the table, and the seat is kept', await seatKept());
   await toggleAdmin(A);
   await A.waitFor(`!${byId('admin')}.hidden`, 5000, 'admin');
   await A.click('modeOnline');
-  await A.waitFor(`${byId('admin')}.hidden && !${byId('lobbyHome')}.hidden`, 5000, 'home from admin');
+  await A.waitFor(`${byId('admin')}.hidden && !${byId('lobbyHome')}.hidden`, 5000, 'the lobby from admin');
   check('and from the Admin screen', true);
+  await A.clickButton('#gameBox', 'Rejoin your game');
+  await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table for the logo');
+  await A.click('brandBtn');
+  await A.waitFor(`!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`, 5000, 'the lobby from the logo');
+  check('the logo also goes to the lobby, and the seat is kept', await seatKept());
   await A.clickButton('#gameBox', 'Rejoin your game');
   await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table again');
   const names = await A.ev(`[1, 2, 3].map((i) => document.getElementById('seat-' + i).textContent)`);

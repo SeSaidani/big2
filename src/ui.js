@@ -1134,9 +1134,9 @@ const joinGame = () => gameAction(() => api.join(), 'lobbyMsg');
 const watchGame = () => gameAction(() => api.watch(), 'lobbyMsg');
 const startOnlineRound = () => gameAction(() => api.start(), table && table.status === 'done' ? 'endNote' : 'waitMsg');
 const leaveTable = () => gameAction(() => api.leave(), table && table.status === 'done' ? 'endNote' : 'waitMsg');
-// The online home: the lobby (or the waiting room), from the table or the Admin screen. A seated player keeps
-// their seat; the home screen offers Rejoin.
-const goOnlineHome = () => {
+// The lobby (or the waiting room), from the table or the Admin screen. A seated player keeps their seat; the lobby
+// offers Rejoin.
+const goLobby = () => {
   adminView = false;
   viewingLobby = true;
   route();
@@ -2125,7 +2125,7 @@ async function submitPassword() {
 
 // ---- wiring ----
 $('modeSolo').addEventListener('click', () => mode !== 'solo' && enterSolo());
-$('modeOnline').addEventListener('click', () => (mode !== 'online' ? enterOnline() : goOnlineHome()));
+$('modeOnline').addEventListener('click', () => (mode !== 'online' ? enterOnline() : goLobby()));
 // The account menu closes when an item is chosen, on a click elsewhere, or on Escape.
 const account = $('account');
 account.addEventListener('click', (e) => {
@@ -2220,7 +2220,11 @@ $('createBtn').addEventListener('click', () =>
 );
 $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
-$('homeBtn').addEventListener('click', goOnlineHome);
+$('lobbyBtn').addEventListener('click', goLobby);
+// The logo goes to the lobby too, once you are online (in a solo game it does nothing: it must not end the game).
+$('brandBtn').addEventListener('click', () => {
+  if (mode === 'online') goLobby();
+});
 $('forfeitBtn').addEventListener('click', forfeitSeat);
 $('watchStopBtn').addEventListener('click', leaveTable);
 $('playersAddBtn').addEventListener('click', () => {
