@@ -85,6 +85,10 @@ export function removeSubscription(db, userId, endpoint) {
   );
 }
 
+export function removeAllSubscriptions(db, userId) {
+  return db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(userId).changes;
+}
+
 export function removeSubscriptionById(db, id) {
   db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(id);
 }

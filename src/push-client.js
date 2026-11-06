@@ -49,6 +49,92 @@ export function alertState(device, { permission, subscribed }) {
   return 'off';
 }
 
+// Step-by-step instructions for allowing alerts on THIS phone and browser, for when the question never appears or
+// was answered No. Menu names differ a little between phones and versions, so the last step is a general fallback.
+export function howToAllow(device) {
+  const press = 'Press Turn on alerts. If the phone asks "Allow notifications?", tap Allow.';
+  const back = 'Come back to this page and press Turn on alerts again.';
+  if (device.os === 'ios') {
+    return {
+      title: 'How to allow alerts on an iPhone or iPad',
+      steps: [
+        device.needsInstall
+          ? 'Add the game to the Home Screen first: in Safari tap the Share button, then Add to Home Screen, then Add. Open Big Two from its new icon and sign in there.'
+          : 'Make sure you opened Big Two from its Home Screen icon, not from Safari.',
+        press,
+        "If it never asked, or you tapped Don't Allow: open the phone's Settings app, tap Notifications, find Big Two in the list, and switch on Allow Notifications.",
+        'If Big Two is not in that list: delete its Home Screen icon, add the game to the Home Screen again, open it, sign in, and press Turn on alerts.',
+        'Not hearing anything? A Focus or Do Not Disturb can hide alerts: open Settings, then Focus, and allow Big Two.',
+      ],
+    };
+  }
+  if (device.os === 'android') {
+    const settings =
+      "Still nothing? Open the phone's Settings, then Apps, find your browser, tap Notifications, and make sure they are switched on.";
+    if (device.browser === 'Samsung Internet') {
+      return {
+        title: 'How to allow alerts in Samsung Internet',
+        steps: [
+          press,
+          'If nothing appeared: tap the menu (three lines), then Settings, then Sites and downloads, then Notifications.',
+          'Find this site in the list and switch it on (or switch on notifications at the top).',
+          back,
+          settings,
+        ],
+      };
+    }
+    if (device.browser === 'Firefox') {
+      return {
+        title: 'How to allow alerts in Firefox on Android',
+        steps: [
+          press,
+          'If nothing appeared: tap the padlock at the left of the address bar, then Permissions (or Edit site settings), then Notifications, and choose Allow.',
+          back,
+          settings,
+        ],
+      };
+    }
+    return {
+      title: 'How to allow alerts in Chrome on Android',
+      steps: [
+        press,
+        'If nothing appeared: tap the padlock (or the small settings icon) at the left of the address bar.',
+        'Tap Permissions (or Site settings), then Notifications, and choose Allow.',
+        back,
+        settings,
+      ],
+    };
+  }
+  if (device.browser === 'Firefox') {
+    return {
+      title: 'How to allow alerts in Firefox',
+      steps: [
+        press,
+        'If nothing appeared: click the padlock at the left of the address bar, then Permissions, then Notifications, and allow.',
+        back,
+      ],
+    };
+  }
+  if (device.browser === 'Safari') {
+    return {
+      title: 'How to allow alerts in Safari',
+      steps: [
+        press,
+        'If nothing appeared: open Safari, then Settings, then Websites, then Notifications, and set this site to Allow.',
+        back,
+      ],
+    };
+  }
+  return {
+    title: 'How to allow alerts in this browser',
+    steps: [
+      press,
+      'If nothing appeared: click the padlock (or the small settings icon) at the left of the address bar, find Notifications, and choose Allow.',
+      back,
+    ],
+  };
+}
+
 // The first-time prompts: where to offer alerts without being asked.
 //   'ios-help'  an iPhone in Safari that has not been shown how to add the site to the Home Screen
 //   'banner'    a phone that can turn alerts on with one tap, and has not said "not now"
@@ -73,7 +159,7 @@ export function browserEnv() {
   };
 }
 
-export const permission = () => ('Notification' in window ? Notification.permission : 'denied');
+export const permission = () => ('Notification' in window ? Notification.permission || 'default' : 'denied');
 
 export async function registerWorker() {
   if (!('serviceWorker' in navigator)) return null;
@@ -118,6 +204,13 @@ export async function turnOff(api) {
   const endpoint = sub && sub.endpoint;
   if (sub) await sub.unsubscribe();
   return endpoint ? api.pushUnsubscribe(endpoint) : api.push();
+}
+
+// Alerts off on every device of mine: this browser forgets its subscription too, so it cannot sign itself back up.
+export async function turnOffAll(api) {
+  const sub = await currentSubscription();
+  if (sub) await sub.unsubscribe();
+  return api.pushUnsubscribeAll();
 }
 
 // On every sign-in where alerts are allowed: make sure the server has this device (it loses it if the

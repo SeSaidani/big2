@@ -37,6 +37,7 @@ export const api = {
   push: () => call('GET', '/api/push'),
   pushSubscribe: (subscription, label) => call('POST', '/api/push/subscribe', { subscription, label }),
   pushUnsubscribe: (endpoint) => call('POST', '/api/push/unsubscribe', { endpoint }),
+  pushUnsubscribeAll: () => call('POST', '/api/push/unsubscribe', { all: true }),
   pushTest: () => call('POST', '/api/push/test', {}),
   logout: () => call('POST', '/api/logout', {}),
   changePassword: (current, next) => call('POST', '/api/password', { current, next }),

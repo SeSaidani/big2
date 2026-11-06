@@ -20,6 +20,8 @@ import {
   currentSubscription,
   turnOn,
   turnOff,
+  turnOffAll,
+  howToAllow,
   syncSubscription,
 } from './push-client.js';
 
@@ -1611,9 +1613,11 @@ const ALERT_STATUS = {
   unsupported: () => 'This browser cannot show turn alerts.',
 };
 
+let lastAlertError = ''; // what the browser last said went wrong (shown in the details line at the bottom)
+
 const ALERT_HELP = {
   blocked:
-    'Alerts were switched off for this site, so the browser will not ask again. Allow them in the phone settings: Android, Settings, Apps, your browser, Notifications. iPhone, Settings, Notifications, Big Two. Then come back and press Turn on alerts.',
+    'The phone is not allowing alerts for this site, so it will not ask again. Follow the steps below to allow them.',
   unsupported:
     'Try Chrome on an Android phone, or on an iPhone add the game to the Home Screen (needs iOS 16.4 or newer). Computers work in Chrome, Edge and Firefox.',
 };
@@ -1634,6 +1638,27 @@ function renderAlerts() {
   show('alertsTest', alertsNow === 'on');
   show('alertsOff', alertsNow === 'on');
   show('alertsDevices', alertDevices.length > 0);
+  // The steps for this phone and browser: always there when alerts are not on yet, open when something went wrong.
+  const how = howToAllow(DEVICE);
+  const needsHow = ['off', 'resubscribe', 'blocked'].includes(alertsNow);
+  show('alertsHow', needsHow);
+  $('alertsHowTitle').textContent = how.title;
+  const steps = $('alertsHowSteps');
+  steps.innerHTML = '';
+  for (const text of how.steps) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    steps.appendChild(li);
+  }
+  if (alertsNow === 'blocked') $('alertsHow').open = true;
+  // What this browser reports: one line to read out or photograph if something does not work.
+  $('alertsDiag').textContent = [
+    `This device: ${DEVICE.label}`,
+    `permission: ${permission()}`,
+    `alerts supported: ${DEVICE.canPush ? 'yes' : 'no'}${DEVICE.needsInstall ? ' (needs the Home Screen icon)' : ''}`,
+    `opened as an installed app: ${DEVICE.standalone ? 'yes' : 'no'}`,
+    ...(lastAlertError ? [`last problem: ${lastAlertError}`] : []),
+  ].join(' | ');
   const list = $('alertsDeviceList');
   list.innerHTML = '';
   for (const d of alertDevices) {
@@ -1665,6 +1690,8 @@ async function alertsDo(fn, okText = '') {
   } catch (err) {
     msg.className = 'bad';
     msg.textContent = err.message || 'Something went wrong.';
+    lastAlertError = err.name && err.name !== 'Error' ? `${err.name}: ${err.message}` : err.message || '';
+    $('alertsHow').open = true; // something went wrong: the steps are the next thing to read
   }
   await readAlertState();
   renderAlerts();
@@ -1676,11 +1703,23 @@ const alertsTurnOn = () =>
   alertsDo(async () => {
     const r = await turnOn(api, DEVICE);
     if (r.permission === 'denied') {
-      throw new Error('The browser blocked alerts. Allow them in the phone settings, then try again.');
+      throw new Error(
+        'The phone said no, or has notifications switched off for this browser. Follow the steps below to allow them, then press Turn on alerts again.',
+      );
     }
-    if (r.permission !== 'granted') throw new Error('Alerts were not switched on: the question was dismissed.');
+    if (r.permission !== 'granted') {
+      throw new Error(
+        'No answer was given, so alerts are still off. If no question appeared on screen, follow the steps below.',
+      );
+    }
+    lastAlertError = '';
     alertDevices = r.devices;
   }, 'Alerts are on. Press Send a test alert to check.');
+
+const alertsTurnOffAll = () =>
+  alertsDo(async () => {
+    alertDevices = (await turnOffAll(api)).devices;
+  }, 'Alerts are off on all your devices.');
 
 const alertsTurnOff = () =>
   alertsDo(async () => {
@@ -1860,6 +1899,7 @@ $('alertsBtn').addEventListener('click', () => {
 });
 $('alertsOn').addEventListener('click', alertsTurnOn);
 $('alertsOff').addEventListener('click', alertsTurnOff);
+$('alertsOffAll').addEventListener('click', alertsTurnOffAll);
 $('alertsTest').addEventListener('click', alertsTest);
 $('alertsClose').addEventListener('click', () => $('alertsDlg').close());
 $('alertsBannerOn').addEventListener('click', async () => {

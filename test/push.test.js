@@ -349,3 +349,30 @@ test('in a real game: someone who plays at once is not alerted for that turn', a
     await ctx.app.close();
   }
 });
+
+test("turning alerts off everywhere removes all of my devices and nobody else's", async () => {
+  const ctx = await boot({ pushFetch: async () => new Response(null, { status: 201 }) });
+  try {
+    const ann = await makeUser(ctx, 'ann1');
+    const bea = await makeUser(ctx, 'bea1');
+    const [a1, a2, b1] = [new FakeDevice(1), new FakeDevice(2), new FakeDevice(3)];
+    for (const d of [a1, a2]) await ann.req('POST', '/api/push/subscribe', { subscription: d.subscription });
+    await bea.req('POST', '/api/push/subscribe', { subscription: b1.subscription });
+    assert.equal((await ann.req('GET', '/api/push')).json.devices.length, 2);
+    const off = await ann.req('POST', '/api/push/unsubscribe', { all: true });
+    assert.equal(off.status, 200);
+    assert.deepEqual(off.json.devices, [], "all of ann's devices are gone");
+    assert.equal((await bea.req('GET', '/api/push')).json.devices.length, 1, "bea's device is untouched");
+    assert.equal((await ann.req('POST', '/api/push/unsubscribe', { all: 'yes' })).status, 400, 'only true means all');
+    assert.equal((await ann.req('POST', '/api/push/unsubscribe', {})).status, 400, 'naming no device is a bad request');
+    assert.equal((await ann.req('POST', '/api/push/unsubscribe', { endpoint: 5 })).status, 400);
+    assert.equal((await bea.req('GET', '/api/push')).json.devices.length, 1);
+    assert.equal(
+      (await new Client(ctx.base).req('POST', '/api/push/unsubscribe', { all: true })).status,
+      401,
+      'it needs a sign-in',
+    );
+  } finally {
+    await ctx.app.close();
+  }
+});

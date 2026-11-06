@@ -1716,3 +1716,9 @@ table.solo-stats th:not(:first-child) {
 .site-label[hidden] {
   display: none;
 }
+
+.diag {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}

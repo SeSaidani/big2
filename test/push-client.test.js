@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeDevice, alertState, firstPrompt, urlBase64ToBytes } from '../src/push-client.js';
+import { describeDevice, alertState, firstPrompt, urlBase64ToBytes, howToAllow } from '../src/push-client.js';
 
 // Real user-agent strings, as the browsers send them.
 const UA = {
@@ -107,4 +107,39 @@ test('the sender key is decoded from base64url', () => {
   const bytes = urlBase64ToBytes(Buffer.from([4, 251, 255, 0, 62]).toString('base64url'));
   assert.deepEqual([...bytes], [4, 251, 255, 0, 62]);
   assert.equal(urlBase64ToBytes('').length, 0);
+});
+
+test('every phone and browser gets plain steps for allowing alerts, in words that match what it has', () => {
+  const steps = (ua, extra) => howToAllow(describeDevice(env(ua, extra)));
+  const chrome = steps(UA.androidChrome);
+  assert.equal(chrome.title, 'How to allow alerts in Chrome on Android');
+  const text = (h) => h.steps.join(' ');
+  assert.match(text(chrome), /padlock/);
+  assert.match(text(chrome), /Permissions/);
+  assert.match(text(chrome), /Notifications/);
+  assert.match(text(chrome), /Settings, then Apps/, 'and the phone settings as the last resort');
+  assert.match(text(chrome), /Allow notifications\?/, 'it says what the question will look like');
+  const samsung = steps(UA.samsung);
+  assert.match(samsung.title, /Samsung Internet/);
+  assert.match(text(samsung), /Sites and downloads/);
+  assert.match(steps(UA.androidFirefox).title, /Firefox on Android/);
+
+  const iphoneTab = steps(UA.iphoneSafari);
+  assert.match(text(iphoneTab), /Add to Home Screen/, 'in Safari the first step is the Home Screen');
+  assert.match(text(iphoneTab), /Settings app.*Notifications.*Big Two/);
+  const iphoneApp = steps(UA.iphoneSafari, { standalone: true });
+  assert.ok(!/Add the game to the Home Screen first/.test(text(iphoneApp)), 'from the icon that step is not needed');
+  assert.match(text(iphoneApp), /Home Screen icon, not from Safari/);
+  assert.match(text(iphoneApp), /Focus/);
+
+  assert.match(steps(UA.windowsEdge).title, /this browser/);
+  assert.match(steps(UA.macSafari, { platform: 'MacIntel' }).title, /Safari/);
+
+  // Whatever the device, there are steps, each one a plain sentence, and nothing is left undefined.
+  for (const ua of Object.values(UA)) {
+    const h = steps(ua);
+    assert.ok(h.title.length > 10 && h.steps.length >= 3, ua);
+    for (const s of h.steps) assert.ok(typeof s === 'string' && s.length > 20 && !s.includes('undefined'), s);
+  }
+  assert.ok(howToAllow(describeDevice({})).steps.length >= 3, 'even an unknown browser');
 });

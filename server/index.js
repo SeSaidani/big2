@@ -39,7 +39,13 @@ import { Hub } from './hub.js';
 import { Lobby } from './lobby.js';
 import { createPool } from './ai-pool.js';
 import { secureRng } from './table.js';
-import { addSubscription, removeSubscription, publicDevices, listSubscriptions } from './push-store.js';
+import {
+  addSubscription,
+  removeSubscription,
+  removeAllSubscriptions,
+  publicDevices,
+  listSubscriptions,
+} from './push-store.js';
 import { createPusher } from './pusher.js';
 import { TurnNotifier } from './notify.js';
 import { isMain } from './main-module.js';
@@ -473,7 +479,9 @@ export function createApp(opts = {}) {
     }
     if (p === '/api/push/unsubscribe' && m === 'POST') {
       const body = await readJson(req);
-      removeSubscription(db, user.id, body.endpoint);
+      if (body.all === true) removeAllSubscriptions(db, user.id);
+      else if (typeof body.endpoint === 'string') removeSubscription(db, user.id, body.endpoint);
+      else throw new HttpError(400, 'Say which device to turn alerts off for.');
       return sendJson(res, 200, { devices: publicDevices(db, user.id) });
     }
     if (p === '/api/push/test' && m === 'POST') {

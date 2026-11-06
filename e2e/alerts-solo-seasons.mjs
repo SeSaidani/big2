@@ -83,7 +83,7 @@ async function main() {
   check(
     'a "Not getting alerts?" help section covers blocked, silent and starting again',
     await A.ev(
-      `(() => { const t = ${byId('alertsDlg')}.querySelector('.alerts-trouble').textContent; return ['Blocked', 'Silent', 'Start again', 'New phone'].every((w) => t.includes(w)); })()`,
+      `(() => { const t = ${byId('alertsDlg')}.querySelector('.alerts-trouble:not(#alertsHow)').textContent; return ['Blocked', 'Silent', 'Start again', 'New phone'].every((w) => t.includes(w)); })()`,
     ),
   );
   await A.shot('2-android-dialog');
@@ -95,8 +95,8 @@ async function main() {
   check(
     'if the browser has blocked alerts, the dialog says how to allow them again',
     (await A.text('alertsStatus')).includes('blocked') &&
-      (await A.text('alertsHelp')).includes('Settings') &&
-      (await A.ev(`${byId('alertsOn')}.hidden`)),
+      (await A.text('alertsHowSteps')).includes('Settings') &&
+      (await A.ev(`${byId('alertsOn')}.hidden && ${byId('alertsHow')}.open`)),
   );
   await closeAlerts();
 
@@ -108,6 +108,67 @@ async function main() {
   await A.waitFor(`${byId('alertsMsg')}.textContent !== ''`, 15000, 'an answer to Turn on');
   const answer = await A.text('alertsMsg');
   check('Turn on gives an answer on screen instead of failing silently', answer.length > 0, answer.slice(0, 100));
+  check(
+    'a failed attempt opens the steps and records what the browser said',
+    (await A.ev(`${byId('alertsHow')}.open`)) && (await A.text('alertsDiag')).includes('last problem'),
+    await A.text('alertsDiag'),
+  );
+  await closeAlerts();
+
+  // The steps are there for this phone and browser, a failed attempt opens them, and a details line says what the browser reports.
+  await A.ev(`Object.defineProperty(Notification, 'permission', { get: () => 'default', configurable: true })`);
+  await openAlerts();
+  const how = await A.ev(
+    `({ shown: !${byId('alertsHow')}.hidden, title: ${byId('alertsHowTitle')}.textContent, steps: ${byId('alertsHowSteps')}.textContent, diag: ${byId('alertsDiag')}.textContent })`,
+  );
+  check(
+    'the dialog has numbered steps for allowing alerts, named for this phone and browser',
+    how.shown &&
+      how.title === 'How to allow alerts in Chrome on Android' &&
+      how.steps.includes('padlock') &&
+      how.steps.includes('Notifications'),
+    how.title,
+  );
+  check(
+    'and a details line to read out if it still does not work',
+    how.diag.includes('Android phone, Chrome') &&
+      how.diag.includes('permission: default') &&
+      how.diag.includes('alerts supported: yes'),
+    how.diag,
+  );
+  await A.shot('2b-android-steps');
+  await closeAlerts();
+
+  // Turning everything off: a pretend phone is registered, listed, and removed with one button.
+  const status = await A.ev(
+    `(async () => {
+      const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+      const raw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+      const b64u = (u8) => btoa(String.fromCharCode(...u8)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+      const auth = crypto.getRandomValues(new Uint8Array(16));
+      const r = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/e2e-pretend-phone', keys: { p256dh: b64u(raw), auth: b64u(auth) } }, label: 'Pretend phone' }),
+      });
+      return r.status;
+    })()`,
+  );
+  check('a pretend phone was registered for the test', status === 200, String(status));
+  await openAlerts();
+  check(
+    'the dialog lists it, with a button to turn alerts off on all my devices',
+    (await A.ev(
+      `!${byId('alertsDevices')}.hidden && ${byId('alertsDeviceList')}.textContent.includes('Pretend phone')`,
+    )) && (await A.ev(`!${byId('alertsOffAll')}.hidden`)),
+  );
+  await A.click('alertsOffAll');
+  await A.waitFor(`${byId('alertsDevices')}.hidden`, 6000, 'the list emptying');
+  check(
+    'turning off on all devices empties the list, and says so',
+    (await A.text('alertsMsg')).includes('off on all your devices') &&
+      (await A.ev(`fetch('/api/push').then((r) => r.json()).then((j) => j.devices.length === 0)`)),
+  );
   await closeAlerts();
 
   // ---------------- an iPhone in Safari ----------------

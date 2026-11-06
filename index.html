@@ -433,12 +433,18 @@
       <div class="row">
         <button type="button" id="alertsOn" class="primary" hidden>Turn on alerts</button>
         <button type="button" id="alertsTest" hidden>Send a test alert</button>
-        <button type="button" id="alertsOff" class="ghost" hidden>Turn off for this device</button>
+        <button type="button" id="alertsOff" class="ghost" hidden>Turn off alerts on this device</button>
       </div>
       <p id="alertsMsg" class="bad"></p>
+      <details id="alertsHow" class="alerts-trouble" hidden>
+        <summary id="alertsHowTitle">How to allow alerts</summary>
+        <ol id="alertsHowSteps" class="ios-steps"></ol>
+        <p class="muted">The names of the menus differ a little between phones and versions of the browser.</p>
+      </details>
       <div id="alertsDevices" hidden>
         <h3>Devices with alerts on</h3>
         <ul id="alertsDeviceList" class="muted"></ul>
+        <button type="button" id="alertsOffAll" class="ghost">Turn off alerts on all my devices</button>
       </div>
       <details class="alerts-trouble">
         <summary>Not getting alerts?</summary>
@@ -456,8 +462,8 @@
             allowed apps, or turn the mode off.
           </li>
           <li>
-            <b>Start again.</b> Press <b>Turn off for this device</b>, then <b>Turn on alerts</b>. On an iPhone you can
-            also delete the Home Screen icon, add the game to the Home Screen again, sign in and turn alerts on.
+            <b>Start again.</b> Press <b>Turn off alerts on this device</b>, then <b>Turn on alerts</b>. On an iPhone
+            you can also delete the Home Screen icon, add the game to the Home Screen again, sign in and turn alerts on.
           </li>
           <li>
             <b>New phone or browser?</b> Alerts belong to one phone and browser. Sign in there and turn them on there
@@ -465,6 +471,7 @@
           </li>
         </ul>
       </details>
+      <p id="alertsDiag" class="muted diag"></p>
       <div class="row"><button type="button" id="alertsClose">Close</button></div>
     </dialog>
 
