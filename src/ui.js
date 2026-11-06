@@ -565,7 +565,6 @@ $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRo
 // After a solo round: choose the level and players first, just look at the table, or go to the online lobby.
 $('againNewBtn').addEventListener('click', () => $('newBtn').click());
 $('endClose').addEventListener('click', () => ($('overlay').hidden = true));
-$('endOnline').addEventListener('click', () => $('modeOnline').click());
 // The play log (and the chat under it). Beside the table it can be folded away. On a phone there is
 // no room beside the table, so it is a sheet over it: the Log button opens it, the × closes it.
 const logPanel = document.querySelector('.log');
@@ -667,14 +666,21 @@ async function enterOnline() {
   beginOnline();
 }
 
-function beginOnline() {
-  $('who').textContent = user.name;
-  show('account', true);
+// The account menu has the same items in a solo game and online: Admin and the view switch for admins, Turn
+// alerts, Password, My solo stats, Log out.
+function renderAccountMenu() {
   show('passwordBtn', true);
   show('alertsBtn', true);
   show('adminBtn', adminUi());
   show('viewBtn', user.isAdmin);
   renderViewBtn();
+}
+
+function beginOnline() {
+  $('who').textContent = user.name;
+  show('account', true);
+  renderAccountMenu();
+  document.body.dataset.online = 'ready'; // the online session has begun (the browser tests wait for this)
   adminView = false;
   viewingLobby = false;
   table = null;
@@ -785,18 +791,11 @@ function syncCountdown() {
 }
 
 // What Leave can do for me right now comes from the server (t.leave): 'free', 'forfeit' (mid-game: it costs the most a
-// round can) or null. Leaving mid-game asks twice, and says what it costs.
-let forfeitTimer = null;
-const resetForfeitBtn = () => {
-  clearTimeout(forfeitTimer);
-  forfeitTimer = null;
-  $('forfeitBtn').textContent = 'Leave seat';
-};
+// round can) or null. Leaving mid-game asks first, in a popup that says what it costs.
 function renderLeaveButtons() {
   const rule = table ? table.leave : null;
   const forfeit = !!table && table.status === 'playing' && rule === 'forfeit';
   show('forfeitBtn', forfeit);
-  if (!forfeit) resetForfeitBtn();
   const spec = watching();
   show('watchStopBtn', spec);
   $('waitLeave').textContent = spec ? 'Stop watching' : 'Leave table';
@@ -807,12 +806,13 @@ function renderLeaveButtons() {
 }
 
 async function forfeitSeat() {
-  if (!forfeitTimer) {
-    $('forfeitBtn').textContent = `Click again: leave and lose ${forfeitPenalty(table.seats.length)} points`;
-    forfeitTimer = setTimeout(resetForfeitBtn, 5000);
-    return;
-  }
-  resetForfeitBtn();
+  const cost = forfeitPenalty(table.seats.length);
+  const sure = await confirmAction({
+    title: 'Leave the game?',
+    text: `Leaving a game in progress costs you ${cost} points, the most a round can, and the game does not count for the other players. The next player in line takes your seat and you go to the back of the line.`,
+    ok: `Leave and lose ${cost} points`,
+  });
+  if (!sure) return;
   try {
     const r = await api.leave();
     if (r.game !== undefined) lobbyGame = r.game;
@@ -840,6 +840,8 @@ function route() {
   show('waitRoom', inLobby && waiting);
   $('overlay').hidden = !(onTableScreen && table.status === 'done');
   $('adminBtn').classList.toggle('active', adminView);
+  // Away from the table while it is my move: a dot on Online says so.
+  $('modeOnline').classList.toggle('attention', myMoveWaiting() && !onTableScreen);
   if (inLobby && !waiting) renderLobbyHome();
   if (inLobby && waiting) renderWaitRoom(table);
   renderChat();
@@ -928,6 +930,7 @@ function renderLobbyHome() {
     route();
   };
   if (table && !table.spectator) {
+    if (myMoveWaiting()) line("It's your turn in your game.", 'turn-note');
     row.appendChild(button(g.status === 'done' ? 'See the result' : 'Rejoin your game', backToTable));
   } else if (table) {
     row.appendChild(button('Back to the table', backToTable));
@@ -1131,10 +1134,17 @@ const joinGame = () => gameAction(() => api.join(), 'lobbyMsg');
 const watchGame = () => gameAction(() => api.watch(), 'lobbyMsg');
 const startOnlineRound = () => gameAction(() => api.start(), table && table.status === 'done' ? 'endNote' : 'waitMsg');
 const leaveTable = () => gameAction(() => api.leave(), table && table.status === 'done' ? 'endNote' : 'waitMsg');
-const backToLobby = () => {
+// The online home: the lobby (or the waiting room), from the table or the Admin screen. A seated player keeps
+// their seat; the home screen offers Rejoin.
+const goOnlineHome = () => {
+  adminView = false;
   viewingLobby = true;
   route();
 };
+
+// It is my move in a game in progress.
+const myMoveWaiting = () =>
+  !!table && !table.spectator && table.status === 'playing' && !!table.game && table.game.turn === table.you;
 
 function clearTrickReset() {
   clearTimeout(trickReset);
@@ -1357,24 +1367,34 @@ function randomPassword() {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
-// A button that needs a second click within four seconds, for things that can't be undone.
-function armedButton(label, action) {
+// A popup that asks before something that cannot be undone, or costs something. It says what will happen and
+// resolves true if they confirm, false if they cancel (or press Escape). Focus starts on Cancel, so a stray
+// Enter never confirms. danger: false is for things that are easily reversed.
+function confirmAction({ title, text, ok = 'Confirm', danger = true }) {
+  return new Promise((resolve) => {
+    const dlg = $('confirmDlg');
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    const okBtn = $('confirmOk');
+    okBtn.textContent = ok;
+    okBtn.className = danger ? 'danger' : 'primary';
+    okBtn.onclick = () => {
+      resolve(true);
+      dlg.close();
+    };
+    $('confirmCancel').onclick = () => dlg.close();
+    dlg.onclose = () => resolve(false); // Cancel, Escape; harmless after a confirm (already resolved)
+    dlg.showModal();
+    $('confirmCancel').focus();
+  });
+}
+
+// A button that asks in the popup first.
+function confirmButton(label, ask, action) {
   const btn = document.createElement('button');
-  let timer = null;
   btn.textContent = label;
-  btn.addEventListener('click', () => {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-      btn.textContent = label;
-      action();
-    } else {
-      btn.textContent = 'Click again to confirm';
-      timer = setTimeout(() => {
-        timer = null;
-        btn.textContent = label;
-      }, 4000);
-    }
+  btn.addEventListener('click', async () => {
+    if (await confirmAction(ask)) action();
   });
   return btn;
 }
@@ -1398,6 +1418,36 @@ async function refreshAdmin() {
     $('adminMsg').textContent = err.message;
   }
 }
+
+// ---- admin tabs ----
+const ADMIN_TABS = ['overview', 'seasons', 'users', 'audit'];
+function savedAdminTab() {
+  try {
+    const t = localStorage.getItem('big2.adminTab');
+    return ADMIN_TABS.includes(t) ? t : null;
+  } catch {
+    return null; // storage can be blocked: just use the default
+  }
+}
+// One section at a time. The panels all stay in the page (they are only hidden), so they keep being updated.
+function showAdminTab(name, focus = false) {
+  for (const t of ADMIN_TABS) {
+    const on = t === name;
+    const tab = $(`tab-${t}`);
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    $(`admin-${t}`).hidden = !on;
+    if (on && focus) tab.focus();
+  }
+  try {
+    localStorage.setItem('big2.adminTab', name);
+  } catch {
+    /* not remembered */
+  }
+}
+// The tab you were last on; the first time, Seasons if the season still needs players, otherwise Overview.
+const firstAdminTab = () =>
+  savedAdminTab() ?? (lobbySeason && lobbySeason.state === 'needs-players' ? 'seasons' : 'overview');
 
 // ---- seasons (admin) ----
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -1436,8 +1486,30 @@ function renderSeasons(list) {
     edit.addEventListener('click', () => startSeasonEdit(s));
     actions.append(edit);
     // A running season can be ended on the spot, so the next one can start.
-    if (s.status === 'active') actions.append(armedButton('End now', () => seasonDo(() => api.admin.endSeason(s.id))));
-    actions.append(armedButton('Delete', () => seasonDo(() => api.admin.deleteSeason(s.id))));
+    if (s.status === 'active') {
+      actions.append(
+        confirmButton(
+          'End now',
+          {
+            title: `End ${s.name} now?`,
+            text: 'A game in progress is stopped and not scored, the table closes and the season is over. This cannot be undone.',
+            ok: 'End the season',
+          },
+          () => seasonDo(() => api.admin.endSeason(s.id)),
+        ),
+      );
+    }
+    actions.append(
+      confirmButton(
+        'Delete',
+        {
+          title: `Delete ${s.name}?`,
+          text: 'The season and its list of players are removed. Games already played stay in the record and still count in All-time. This cannot be undone.',
+          ok: 'Delete the season',
+        },
+        () => seasonDo(() => api.admin.deleteSeason(s.id)),
+      ),
+    );
     tr.appendChild(actions);
     body.appendChild(tr);
   }
@@ -1534,8 +1606,17 @@ function renderPlayers(p) {
       b.title = 'Seated: cancel the game first';
       actions.append(b);
     } else {
+      const season = playersSeason;
       actions.append(
-        armedButton('Remove', () => playersDo(() => api.admin.removeSeasonPlayer(playersSeason.id, m.userId))),
+        confirmButton(
+          'Remove',
+          {
+            title: `Remove ${m.name}?`,
+            text: `${m.name} will no longer be a player in ${season.name}. Their games stay in the record.`,
+            ok: 'Remove the player',
+          },
+          () => playersDo(() => api.admin.removeSeasonPlayer(season.id, m.userId)),
+        ),
       );
     }
     tr.appendChild(actions);
@@ -1640,7 +1721,15 @@ function renderAdmin(o, users, entries) {
         : 'Cancelling clears the table' + (devTables ? '.' : ', and a fresh one opens while a season is running.');
     box.append(
       note,
-      armedButton('Cancel game', () => adminDo(() => api.admin.cancelGame())),
+      confirmButton(
+        'Cancel game',
+        {
+          title: 'Cancel the game?',
+          text: 'A game in progress is stopped for everyone and is not scored. While a season is running a fresh table opens.',
+          ok: 'Cancel the game',
+        },
+        () => adminDo(() => api.admin.cancelGame()),
+      ),
     );
   }
 
@@ -1664,11 +1753,32 @@ function renderAdmin(o, users, entries) {
     const reset = document.createElement('button');
     reset.textContent = 'Reset password';
     reset.addEventListener('click', () => openReset(u));
-    const dis = armedButton(u.disabled ? 'Enable' : 'Disable', () =>
-      adminDo(() => api.admin.setDisabled(u.id, !u.disabled)),
+    const dis = confirmButton(
+      u.disabled ? 'Enable' : 'Disable',
+      u.disabled
+        ? { title: `Enable ${u.name}?`, text: `${u.name} will be able to sign in again.`, ok: 'Enable', danger: false }
+        : {
+            title: `Disable ${u.name}?`,
+            text: `${u.name} is signed out everywhere and cannot sign in until you enable them again. Their games stay in the record.`,
+            ok: 'Disable',
+          },
+      () => adminDo(() => api.admin.setDisabled(u.id, !u.disabled)),
     );
-    const role = armedButton(u.isAdmin ? 'Remove admin' : 'Make admin', () =>
-      adminDo(() => api.admin.setAdmin(u.id, !u.isAdmin)),
+    const role = confirmButton(
+      u.isAdmin ? 'Remove admin' : 'Make admin',
+      u.isAdmin
+        ? {
+            title: `Remove ${u.name} as an admin?`,
+            text: `${u.name} goes back to being a normal player.`,
+            ok: 'Remove admin',
+          }
+        : {
+            title: `Make ${u.name} an admin?`,
+            text: `${u.name} will be able to create accounts and seasons, cancel games, and see everything on the Admin screen.`,
+            ok: 'Make admin',
+            danger: false,
+          },
+      () => adminDo(() => api.admin.setAdmin(u.id, !u.isAdmin)),
     );
     actions.append(reset, dis, role);
     tr.appendChild(actions);
@@ -2015,7 +2125,7 @@ async function submitPassword() {
 
 // ---- wiring ----
 $('modeSolo').addEventListener('click', () => mode !== 'solo' && enterSolo());
-$('modeOnline').addEventListener('click', () => mode !== 'online' && enterOnline());
+$('modeOnline').addEventListener('click', () => (mode !== 'online' ? enterOnline() : goOnlineHome()));
 // The account menu closes when an item is chosen, on a click elsewhere, or on Escape.
 const account = $('account');
 account.addEventListener('click', (e) => {
@@ -2050,10 +2160,28 @@ $('viewBtn').addEventListener('click', () => {
   renderViewBtn();
   route();
 });
-$('adminBtn').addEventListener('click', () => {
+$('adminBtn').addEventListener('click', async () => {
+  if (mode !== 'online') {
+    // From a solo game: go online first, then open Admin.
+    await enterOnline();
+    if (mode !== 'online') return;
+    adminView = false;
+  }
   adminView = !adminView;
   route();
-  if (adminView) refreshAdmin();
+  if (adminView) {
+    showAdminTab(firstAdminTab());
+    refreshAdmin();
+  }
+});
+for (const t of ADMIN_TABS) $(`tab-${t}`).addEventListener('click', () => showAdminTab(t));
+// Arrow keys move along the tabs (and Home and End jump), as people expect of a tab row.
+document.querySelector('.tabs').addEventListener('keydown', (e) => {
+  const at = ADMIN_TABS.findIndex((t) => $(`tab-${t}`).getAttribute('aria-selected') === 'true');
+  const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: ADMIN_TABS.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  showAdminTab(ADMIN_TABS[(to + ADMIN_TABS.length) % ADMIN_TABS.length], true);
 });
 $('alertsBtn').addEventListener('click', () => {
   $('account').open = false;
@@ -2074,7 +2202,6 @@ $('alertsBannerLater').addEventListener('click', () => {
 });
 $('iosOk').addEventListener('click', () => $('iosDlg').close());
 $('soloStatsBtn').addEventListener('click', openSoloStats);
-$('endStats').addEventListener('click', openSoloStats);
 $('soloStatsClose').addEventListener('click', () => $('soloStatsDlg').close());
 $('soloStatsX').addEventListener('click', () => $('soloStatsDlg').close());
 $('passwordBtn').addEventListener('click', () => {
@@ -2093,7 +2220,7 @@ $('createBtn').addEventListener('click', () =>
 );
 $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
-$('leaveBtn').addEventListener('click', backToLobby);
+$('homeBtn').addEventListener('click', goOnlineHome);
 $('forfeitBtn').addEventListener('click', forfeitSeat);
 $('watchStopBtn').addEventListener('click', leaveTable);
 $('playersAddBtn').addEventListener('click', () => {
@@ -2135,6 +2262,7 @@ async function boot() {
   if (user) {
     $('who').textContent = user.name;
     show('account', true);
+    renderAccountMenu();
     flushSoloResults();
   }
   try {

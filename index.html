@@ -93,7 +93,6 @@
           <button type="button" id="modeSolo" class="seg active">Solo</button>
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
-        <span id="soloChip" class="chip solo-only" title="The settings of this game"></span>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
       <button type="button" id="helpBtn" class="ghost help-btn" title="How to play" aria-label="How to play">?</button>
@@ -101,10 +100,10 @@
         <summary id="who" aria-label="Account menu"></summary>
         <div class="menu">
           <button type="button" id="soloStatsBtn" class="ghost">My solo stats</button>
-          <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
-          <button type="button" id="viewBtn" class="ghost online-only" hidden>Switch to player view</button>
-          <button type="button" id="alertsBtn" class="ghost online-only" hidden>Turn alerts</button>
-          <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
+          <button type="button" id="adminBtn" class="ghost" hidden>Admin</button>
+          <button type="button" id="viewBtn" class="ghost" hidden>Switch to player view</button>
+          <button type="button" id="alertsBtn" class="ghost" hidden>Turn alerts</button>
+          <button type="button" id="passwordBtn" class="ghost" hidden>Password</button>
           <button type="button" id="logoutBtn" class="ghost">Log out</button>
         </div>
       </details>
@@ -120,6 +119,15 @@
 
     <div class="layout">
       <main class="table" id="tableMain" aria-label="Game table">
+        <button
+          type="button"
+          id="homeBtn"
+          class="ghost online-only table-home"
+          title="Back to the online home. Your seat is kept."
+        >
+          ‹ Online home
+        </button>
+        <span id="soloChip" class="table-note solo-only" title="The settings of this game"></span>
         <section class="seat seat-north" id="seat-2"></section>
         <section class="seat seat-west" id="seat-1"></section>
         <section class="seat seat-east" id="seat-3"></section>
@@ -150,9 +158,6 @@
               aria-expanded="false"
             >
               Log
-            </button>
-            <button type="button" id="leaveBtn" class="ghost online-only" title="Your seat is kept until the game ends">
-              Back to lobby
             </button>
             <button type="button" id="forfeitBtn" class="ghost online-only" hidden>Leave seat</button>
             <button type="button" id="watchStopBtn" class="ghost online-only" hidden>Stop watching</button>
@@ -266,19 +271,121 @@
       </main>
 
       <main class="lobby admin" id="admin" aria-label="Admin" hidden>
-        <div class="lobby-grid">
+        <div class="tabs" role="tablist" aria-label="Admin sections">
+          <button
+            type="button"
+            role="tab"
+            id="tab-overview"
+            class="tab"
+            aria-selected="true"
+            aria-controls="admin-overview"
+            tabindex="0"
+          >
+            Overview
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-seasons"
+            class="tab"
+            aria-selected="false"
+            aria-controls="admin-seasons"
+            tabindex="-1"
+          >
+            Seasons
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-users"
+            class="tab"
+            aria-selected="false"
+            aria-controls="admin-users"
+            tabindex="-1"
+          >
+            Users
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-audit"
+            class="tab"
+            aria-selected="false"
+            aria-controls="admin-audit"
+            tabindex="-1"
+          >
+            Audit log
+          </button>
+        </div>
+        <p id="adminMsg" class="bad"></p>
+        <div role="tabpanel" id="admin-overview" aria-labelledby="tab-overview" class="tab-panel">
+          <div class="lobby-grid">
+            <section class="panel-card">
+              <h2>Game</h2>
+              <div id="adminGame"></div>
+              <h3>Registration</h3>
+              <div class="row">
+                <span id="regState"></span>
+                <button type="button" id="regBtn"></button>
+              </div>
+              <h3>Server</h3>
+              <p id="adminStats" class="muted"></p>
+            </section>
+          </div>
+        </div>
+        <div role="tabpanel" id="admin-seasons" aria-labelledby="tab-seasons" class="tab-panel" hidden>
           <section class="panel-card">
-            <h2>Game</h2>
-            <div id="adminGame"></div>
-            <h3>Registration</h3>
-            <div class="row">
-              <span id="regState"></span>
-              <button type="button" id="regBtn"></button>
+            <h2>Seasons</h2>
+            <p class="muted">
+              A season is a date range. A game counts in the season in which it <b>finished</b>. Seasons cannot overlap;
+              gaps are fine (games in a gap only count in All-time). Leave the end empty for "until I set one". Times
+              are in your local time zone.
+            </p>
+            <table class="lb users">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Players</th>
+                  <th>Games</th>
+                  <th>Champion</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="seasonsBody"></tbody>
+            </table>
+            <h3 id="seasonFormTitle">New season</h3>
+            <div class="row season-form">
+              <div class="field">
+                <label for="seasonName">Name</label
+                ><input type="text" id="seasonName" maxlength="40" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="seasonStart">Starts (empty means now)</label
+                ><input id="seasonStart" type="datetime-local" />
+              </div>
+              <div class="field">
+                <label for="seasonEnd">Ends (optional)</label><input id="seasonEnd" type="datetime-local" />
+              </div>
             </div>
-            <h3>Server</h3>
-            <p id="adminStats" class="muted"></p>
-            <p id="adminMsg" class="bad"></p>
+            <fieldset id="seasonPicksBox" class="picks">
+              <legend>Players</legend>
+              <p class="muted">
+                Tick at least 4 existing accounts for a season that is running or to come. The first four ticked sit
+                down; any others wait as reserves and take a seat when someone is rotated out or leaves.
+              </p>
+              <div id="seasonPicks" class="picks-list"></div>
+            </fieldset>
+            <div class="row">
+              <button type="button" id="seasonSave" class="primary">Create season</button>
+              <button type="button" id="seasonCancel" class="ghost" hidden>Cancel edit</button>
+            </div>
+            <p id="seasonMsg" class="muted"></p>
           </section>
+        </div>
+        <div role="tabpanel" id="admin-users" aria-labelledby="tab-users" class="tab-panel" hidden>
           <section class="panel-card">
             <h2>Create a user</h2>
             <p class="muted">Give them the temporary password; they can change it with the Password button.</p>
@@ -302,76 +409,29 @@
             <div class="row"><button type="button" id="createUserBtn" class="primary">Create user</button></div>
             <p id="createUserMsg" class="muted"></p>
           </section>
+          <section class="panel-card">
+            <h2>Users</h2>
+            <table class="lb users">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Alerts</th>
+                  <th>Games</th>
+                  <th>Last login</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="usersBody"></tbody>
+            </table>
+          </section>
         </div>
-        <section class="panel-card">
-          <h2>Seasons</h2>
-          <p class="muted">
-            A season is a date range. A game counts in the season in which it <b>finished</b>. Seasons cannot overlap;
-            gaps are fine (games in a gap only count in All-time). Leave the end empty for "until I set one". Times are
-            in your local time zone.
-          </p>
-          <table class="lb users">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>From</th>
-                <th>To</th>
-                <th>Players</th>
-                <th>Games</th>
-                <th>Champion</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="seasonsBody"></tbody>
-          </table>
-          <h3 id="seasonFormTitle">New season</h3>
-          <div class="row season-form">
-            <div class="field">
-              <label for="seasonName">Name</label
-              ><input type="text" id="seasonName" maxlength="40" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="seasonStart">Starts (empty means now)</label><input id="seasonStart" type="datetime-local" />
-            </div>
-            <div class="field">
-              <label for="seasonEnd">Ends (optional)</label><input id="seasonEnd" type="datetime-local" />
-            </div>
-          </div>
-          <fieldset id="seasonPicksBox" class="picks">
-            <legend>Players</legend>
-            <p class="muted">
-              Tick at least 4 existing accounts for a season that is running or to come. The first four ticked sit down;
-              any others wait as reserves and take a seat when someone is rotated out or leaves.
-            </p>
-            <div id="seasonPicks" class="picks-list"></div>
-          </fieldset>
-          <div class="row">
-            <button type="button" id="seasonSave" class="primary">Create season</button>
-            <button type="button" id="seasonCancel" class="ghost" hidden>Cancel edit</button>
-          </div>
-          <p id="seasonMsg" class="muted"></p>
-        </section>
-        <section class="panel-card">
-          <h2>Users</h2>
-          <table class="lb users">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Alerts</th>
-                <th>Games</th>
-                <th>Last login</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="usersBody"></tbody>
-          </table>
-        </section>
-        <section class="panel-card">
-          <h2>Audit log</h2>
-          <ul id="auditList" class="list"></ul>
-        </section>
+        <div role="tabpanel" id="admin-audit" aria-labelledby="tab-audit" class="tab-panel" hidden>
+          <section class="panel-card">
+            <h2>Audit log</h2>
+            <ul id="auditList" class="list"></ul>
+          </section>
+        </div>
       </main>
 
       <aside class="log" aria-label="Play log and chat">
@@ -402,9 +462,7 @@
         <div class="row">
           <button type="button" id="againBtn" class="primary">Play again</button>
           <button type="button" id="againNewBtn" class="solo-only">Change level or players</button>
-          <button type="button" id="endStats" class="ghost solo-only">My solo stats</button>
           <button type="button" id="endClose" class="ghost solo-only">Close</button>
-          <button type="button" id="endOnline" class="ghost solo-only">Go online</button>
           <button type="button" id="endLeave" class="online-only">Leave table</button>
         </div>
       </div>
@@ -438,7 +496,16 @@
       <div class="row"><button type="button" id="playersClose">Close</button></div>
     </dialog>
 
-    <dialog id="resetDlg">
+    <dialog id="confirmDlg" class="compact">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <p id="confirmText" class="muted"></p>
+      <div class="row">
+        <button type="button" id="confirmOk" class="danger">Confirm</button>
+        <button type="button" id="confirmCancel" class="ghost">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="resetDlg" class="compact">
       <h2>Set a temporary password</h2>
       <p class="muted">For <b id="resetName"></b>. They are signed out everywhere and must use this to sign in.</p>
       <div class="field">
@@ -676,7 +743,7 @@
       </div>
     </dialog>
 
-    <dialog id="newGameDlg">
+    <dialog id="newGameDlg" class="compact">
       <h2>New game</h2>
       <p class="muted">The settings are fixed for the whole game. To change them, start another one.</p>
       <div class="field">
@@ -701,7 +768,7 @@
       </div>
     </dialog>
 
-    <dialog id="pwDlg">
+    <dialog id="pwDlg" class="compact">
       <h2>Change your password</h2>
       <div class="field">
         <label for="pwCurrent">Current password</label

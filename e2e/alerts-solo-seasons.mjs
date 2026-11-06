@@ -34,7 +34,11 @@ const byId = (id) => `document.getElementById(${JSON.stringify(id)})`;
 const setUa = (ua) => A.conn.send('Network.setUserAgentOverride', { userAgent: ua });
 const reloadGame = async () => {
   await A.goto(BASE);
-  await A.waitFor(`${byId('who')}.textContent === 'boss' && !${byId('lobbyHome')}.hidden`, 10000, 'lobby');
+  await A.waitFor(
+    `${byId('who')}.textContent === 'boss' && !${byId('lobbyHome')}.hidden && document.body.dataset.online === 'ready'`,
+    10000,
+    'lobby',
+  );
   await sleep(400); // startAlerts runs just after the lobby appears
 };
 const openAlerts = async () => {
@@ -228,12 +232,12 @@ async function main() {
   await A.ev(`${byId('overlay')}.hidden = false`); // as when a round has just ended
   const shown = (id) => A.ev(`getComputedStyle(${byId(id)}).display !== 'none'`);
   check(
-    'solo win screen: Play again, Change level or players, Close and Go online are all there; Leave table is not',
+    'solo win screen: Play again, Change level or players and Close are there; Leave table, My solo stats and Go online are not',
     (await shown('againBtn')) &&
       (await shown('againNewBtn')) &&
       (await shown('endClose')) &&
-      (await shown('endOnline')) &&
-      !(await shown('endLeave')),
+      !(await shown('endLeave')) &&
+      (await A.ev(`!document.getElementById('endStats') && !document.getElementById('endOnline')`)),
   );
   await A.click('endClose');
   check('Close lets you look at the finished table', await A.ev(`${byId('overlay')}.hidden`));
@@ -253,13 +257,10 @@ async function main() {
     await A.text('soloChip'),
   );
   await A.ev(`${byId('overlay')}.hidden = false`);
-  await A.click('endOnline');
+  await A.click('modeOnline');
   await A.waitFor(`document.body.classList.contains('online') && ${byId('overlay')}.hidden`, 8000, 'online lobby');
-  check('"Go online" leaves the solo game for the online lobby', true);
-  check(
-    'online, none of the solo-only buttons show',
-    !(await shown('againNewBtn')) && !(await shown('endClose')) && !(await shown('endOnline')),
-  );
+  check('the Online switch leaves the solo game for the online lobby', true);
+  check('online, none of the solo-only buttons show', !(await shown('againNewBtn')) && !(await shown('endClose')));
 
   // ---------------- ending and creating seasons ----------------
   await A.click('who');
@@ -279,13 +280,13 @@ async function main() {
   );
   await A.waitFor(`${byId('seasonMsg')}.textContent.includes('End now')`, 6000, 'the clash message');
   check('creating a season while one is running explains why not, and what to press', true, await A.text('seasonMsg'));
-  await A.clickButton('#seasonsBody', 'End now'); // arms the button
-  await A.waitFor(
-    `[...document.querySelectorAll('#seasonsBody button')].some((b) => b.textContent === 'Click again to confirm')`,
-    3000,
-    'armed',
+  await A.clickButton('#seasonsBody', 'End now');
+  const saysEnd = await A.confirmPopup();
+  check(
+    'End now asks in a popup that says what happens',
+    /End Season 1 now\?/.test(saysEnd) && saysEnd.includes('not scored'),
+    saysEnd,
   );
-  await A.clickButton('#seasonsBody', 'Click again to confirm');
   await A.waitFor(`document.querySelector('#seasonsBody tr').children[1].textContent === 'past'`, 6000, 'season ended');
   check('End now (confirmed) ends the season at once', (await rows())[0].includes('past'), (await rows())[0]);
   check(

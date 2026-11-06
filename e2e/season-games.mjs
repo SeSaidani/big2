@@ -49,17 +49,6 @@ async function addPlayer(page, name, expectedRows) {
   );
 }
 
-// A two-step button ("Click again to confirm"). Opening the Admin screen starts a refresh that rebuilds the table and
-// disarms the button, so if the second click finds nothing, start again.
-async function confirmClick(page, selector, label) {
-  for (let i = 0; i < 8; i++) {
-    await page.clickButton(selector, label);
-    await sleep(300);
-    if (await page.clickButton(selector, 'Click again to confirm')) return;
-  }
-  throw new Error(`could not confirm ${label}`);
-}
-
 const playerRows = (page) =>
   page.ev(
     `[...document.querySelectorAll('#playersBody tr')].map((r) => [...r.children].slice(1, 3).map((c) => c.textContent).join(': '))`,
@@ -94,6 +83,42 @@ async function main() {
     8000,
     'admin',
   );
+  // ---- the Admin screen is tabbed: one section at a time, and it remembers where you were ----
+  const tabsNow = () =>
+    A.ev(
+      `[...document.querySelectorAll('[role=tab]')].map((t) => t.textContent.trim() + ':' + t.getAttribute('aria-selected'))`,
+    );
+  const panelsNow = () =>
+    A.ev(`[...document.querySelectorAll('[role=tabpanel]')].filter((p) => !p.hidden).map((p) => p.id)`);
+  check(
+    'Admin has four tabs and opens on Seasons while the season still needs players',
+    (await tabsNow()).join(' ') === 'Overview:false Seasons:true Users:false Audit log:false' &&
+      (await panelsNow()).join() === 'admin-seasons',
+    (await tabsNow()).join(' '),
+  );
+  await A.click('tab-users');
+  check(
+    'the Users tab shows the user list and the new-user form, and nothing else',
+    (await panelsNow()).join() === 'admin-users' &&
+      (await A.ev(
+        `!!document.querySelector('#admin-users #createUserBtn') && !!document.querySelector('#admin-users #usersBody tr')`,
+      )),
+  );
+  await A.click('tab-audit');
+  check('the Audit log tab shows only the log', (await panelsNow()).join() === 'admin-audit');
+  await A.ev(
+    `document.getElementById('tab-audit').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`,
+  );
+  check(
+    'the right arrow moves along the tabs, wrapping round to Overview',
+    (await panelsNow()).join() === 'admin-overview' &&
+      (await A.ev(
+        `document.activeElement.id === 'tab-overview' && document.getElementById('adminStats').textContent.includes('accounts')`,
+      )),
+  );
+  await A.shot('1b-admin-overview-tab');
+  await A.click('tab-seasons');
+
   const cols = await A.ev(`[...document.querySelectorAll('.lb.users th')].map((t) => t.textContent)`);
   check('the seasons table has a Players column', cols.includes('Players'));
   check(
@@ -143,6 +168,44 @@ async function main() {
     'the game starting by itself',
   );
   check('the four seated people got a game without anyone pressing Start', true);
+
+  // ---- getting back to the online home from a game in progress: the seat is kept, and it says if it is your move ----
+  check(
+    'the table has an Online home button in its corner (and the old Back to lobby is gone)',
+    await A.ev(`getComputedStyle(${byId('homeBtn')}).display !== 'none' && !document.getElementById('leaveBtn')`),
+  );
+  const seatKept = () =>
+    A.ev(`fetch('/api/game').then((r) => r.json()).then((j) => !!j.table && j.table.status === 'playing')`);
+  const myMove = await A.ev(`fetch('/api/game').then((r) => r.json()).then((j) => j.table.game.turn === j.table.you)`);
+  await A.click('homeBtn');
+  await A.waitFor(`!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`, 5000, 'the online home');
+  check(
+    'the home button goes to the online home and offers to rejoin the game',
+    (await A.text('gameBox')).includes('Rejoin your game'),
+  );
+  check(
+    'it says it is your turn exactly when it is, on the home screen and as a dot on Online',
+    (await A.ev(`!!document.querySelector('#gameBox .turn-note')`)) === myMove &&
+      (await A.ev(`${byId('modeOnline')}.classList.contains('attention')`)) === myMove,
+    `my move: ${myMove}`,
+  );
+  check('the seat is kept', await seatKept());
+  await A.clickButton('#gameBox', 'Rejoin your game');
+  await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table');
+  await A.click('modeOnline');
+  await A.waitFor(
+    `!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`,
+    5000,
+    'the online home from the table',
+  );
+  check('the Online button also goes home from the table, and the seat is kept', await seatKept());
+  await toggleAdmin(A);
+  await A.waitFor(`!${byId('admin')}.hidden`, 5000, 'admin');
+  await A.click('modeOnline');
+  await A.waitFor(`${byId('admin')}.hidden && !${byId('lobbyHome')}.hidden`, 5000, 'home from admin');
+  check('and from the Admin screen', true);
+  await A.clickButton('#gameBox', 'Rejoin your game');
+  await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table again');
   const names = await A.ev(`[1, 2, 3].map((i) => document.getElementById('seat-' + i).textContent)`);
   check(
     'the other seats are the roster players, not computers',
@@ -208,9 +271,12 @@ async function main() {
   await A.waitFor(`!${byId('forfeitBtn')}.hidden`, 8000, 'Leave seat offered with five players');
   check('with a fifth player a Leave seat button appears', true);
   await A.click('forfeitBtn');
-  const warn = await A.text('forfeitBtn');
-  check('it asks again and says what it costs', /Click again/.test(warn) && warn.includes('56 points'), warn);
-  await A.click('forfeitBtn');
+  const warn = await A.confirmPopup();
+  check(
+    'it asks in a popup and says what it costs',
+    warn.includes('Leave the game?') && warn.includes('56 points'),
+    warn,
+  );
   await A.waitFor(
     `!${byId('lobbyHome')}.hidden && ${byId('gameBox')}.textContent.includes('Starting')`,
     10000,
@@ -249,7 +315,8 @@ async function main() {
     8000,
     'admin',
   );
-  await confirmClick(A, '#seasonsBody', 'End now');
+  await A.clickButton('#seasonsBody', 'End now');
+  await A.confirmPopup();
   await A.waitFor(
     `document.querySelector('#seasonsBody tr').children[1].textContent === 'past'`,
     8000,
@@ -299,6 +366,22 @@ async function main() {
   await toggleAdmin(A);
   await A.waitFor(`${byId('gameBox')}.textContent.includes('bob, cat, dan, eve')`, 8000, 'the new season table');
   check('and its table opens with the four ticked players, in the order ticked', true);
+
+  // ---- the tab you left on is the one you come back to ----
+  await A.click('tab-audit');
+  await A.goto(BASE);
+  await A.waitFor(
+    `document.getElementById('who').textContent === 'boss' && !document.getElementById('lobbyHome').hidden`,
+    10000,
+    'the lobby after a reload',
+  );
+  await toggleAdmin(A);
+  await A.waitFor(`!${byId('admin')}.hidden`, 8000, 'admin again');
+  check(
+    'after a reload Admin opens on the tab you left it on',
+    (await panelsNow()).join() === 'admin-audit',
+    (await tabsNow()).join(' '),
+  );
 }
 
 let failed = false;

@@ -157,6 +157,17 @@ export class Page {
     );
   }
 
+  // The "are you sure?" popup: wait for it to open, optionally return what it says, and press its confirm button.
+  async confirmPopup() {
+    await this.waitFor(`document.getElementById('confirmDlg').open`, 5000, 'the confirm popup');
+    const said = await this.ev(
+      `document.getElementById('confirmTitle').textContent + ' | ' + document.getElementById('confirmText').textContent`,
+    );
+    await this.click('confirmOk');
+    await this.waitFor(`!document.getElementById('confirmDlg').open`, 5000, 'the popup closing');
+    return said;
+  }
+
   // The sign-in page is all a signed-out visitor gets; on success it reloads into the game.
   async signIn(name, password) {
     await this.waitFor(
@@ -168,7 +179,7 @@ export class Page {
       `document.getElementById('name').value=${JSON.stringify(name)}; document.getElementById('pw').value=${JSON.stringify(password)}; document.getElementById('loginBtn').click()`,
     );
     await this.waitFor(
-      `document.getElementById('who').textContent===${JSON.stringify(name)} && !document.getElementById('lobbyHome').hidden`,
+      `document.getElementById('who').textContent===${JSON.stringify(name)} && !document.getElementById('lobbyHome').hidden && (document.body.dataset.online === 'ready' || document.body.classList.contains('solo'))`,
       10000,
       `${name} in the lobby`,
     );
