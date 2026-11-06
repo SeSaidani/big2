@@ -125,8 +125,11 @@ async function main() {
     'the dialog has numbered steps for allowing alerts, named for this phone and browser',
     how.shown &&
       how.title === 'How to allow alerts in Chrome on Android' &&
-      how.steps.includes('padlock') &&
-      how.steps.includes('Notifications'),
+      how.steps.includes('tap your name at the top right of the game, then Turn alerts') &&
+      how.steps.includes('Delete & reset') &&
+      how.steps.includes('All sites') &&
+      how.steps.includes('All notifications') &&
+      how.steps.includes('padlock'),
     how.title,
   );
   check(

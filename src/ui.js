@@ -1617,7 +1617,7 @@ let lastAlertError = ''; // what the browser last said went wrong (shown in the 
 
 const ALERT_HELP = {
   blocked:
-    'The phone is not allowing alerts for this site, so it will not ask again. Follow the steps below to allow them.',
+    'Your browser is set to Block alerts for this site, so it will not ask. The steps below show how to change that: start with step 2.',
   unsupported:
     'Try Chrome on an Android phone, or on an iPhone add the game to the Home Screen (needs iOS 16.4 or newer). Computers work in Chrome, Edge and Firefox.',
 };

@@ -111,18 +111,30 @@ test('the sender key is decoded from base64url', () => {
 
 test('every phone and browser gets plain steps for allowing alerts, in words that match what it has', () => {
   const steps = (ua, extra) => howToAllow(describeDevice(env(ua, extra)));
+  const text = (h) => h.steps.join(' ');
   const chrome = steps(UA.androidChrome);
   assert.equal(chrome.title, 'How to allow alerts in Chrome on Android');
-  const text = (h) => h.steps.join(' ');
-  assert.match(text(chrome), /padlock/);
-  assert.match(text(chrome), /Permissions/);
-  assert.match(text(chrome), /Notifications/);
-  assert.match(text(chrome), /Settings, then Apps/, 'and the phone settings as the last resort');
-  assert.match(text(chrome), /Allow notifications\?/, 'it says what the question will look like');
+  // Step 1 says where the dialog is, because the instructions are useless if you cannot find the box.
+  assert.match(chrome.steps[0], /tap your name at the top right of the game, then Turn alerts/);
+  assert.match(chrome.steps[0], /Allow notifications\?/, 'it says what the question will look like');
+  // The order that worked on a phone where Chrome had the site on Block: reset the site, then the master switch,
+  // then Android's own switch, then refresh.
+  assert.match(chrome.steps[1], /three dots.*Settings.*Site settings.*All sites.*Delete & reset/);
+  assert.match(chrome.steps[1], /signed out: sign in again/, 'it warns that resetting signs you out');
+  assert.match(chrome.steps[2], /Site settings.*Notifications.*switch at the top.*Blocked.*Allow/);
+  assert.match(chrome.steps[2], /padlock/, 'and the quick route');
+  assert.match(chrome.steps[3], /Settings app.*Apps.*All notifications.*Sites/);
+  assert.match(chrome.steps[4], /refresh/);
+  assert.equal(chrome.steps.length, 5);
+
   const samsung = steps(UA.samsung);
   assert.match(samsung.title, /Samsung Internet/);
   assert.match(text(samsung), /Sites and downloads/);
-  assert.match(steps(UA.androidFirefox).title, /Firefox on Android/);
+  assert.match(text(samsung), /Settings app.*Apps/, 'Samsung Internet gets the Android-level step too');
+  const firefox = steps(UA.androidFirefox);
+  assert.match(firefox.title, /Firefox on Android/);
+  assert.match(text(firefox), /Reset permissions/);
+  assert.match(text(firefox), /Settings app.*Apps/);
 
   const iphoneTab = steps(UA.iphoneSafari);
   assert.match(text(iphoneTab), /Add to Home Screen/, 'in Safari the first step is the Home Screen');
@@ -135,10 +147,14 @@ test('every phone and browser gets plain steps for allowing alerts, in words tha
   assert.match(steps(UA.windowsEdge).title, /this browser/);
   assert.match(steps(UA.macSafari, { platform: 'MacIntel' }).title, /Safari/);
 
-  // Whatever the device, there are steps, each one a plain sentence, and nothing is left undefined.
+  // Every device is told where the dialog is, and gets plain sentences with nothing undefined.
   for (const ua of Object.values(UA)) {
     const h = steps(ua);
     assert.ok(h.title.length > 10 && h.steps.length >= 3, ua);
+    assert.ok(
+      h.steps.some((s) => /tap your name at the top right of the game, then Turn alerts/.test(s)),
+      ua,
+    );
     for (const s of h.steps) assert.ok(typeof s === 'string' && s.length > 20 && !s.includes('undefined'), s);
   }
   assert.ok(howToAllow(describeDevice({})).steps.length >= 3, 'even an unknown browser');

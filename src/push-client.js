@@ -50,10 +50,15 @@ export function alertState(device, { permission, subscribed }) {
 }
 
 // Step-by-step instructions for allowing alerts on THIS phone and browser, for when the question never appears or
-// was answered No. Menu names differ a little between phones and versions, so the last step is a general fallback.
+// was answered No. Written from what actually worked on a phone where Chrome had this site on Block: reset the site
+// first, then the browser's master switch, then Android's own switch. Menu names differ a little between phones and
+// versions, so each list says what to look for.
 export function howToAllow(device) {
-  const press = 'Press Turn on alerts. If the phone asks "Allow notifications?", tap Allow.';
-  const back = 'Come back to this page and press Turn on alerts again.';
+  const where =
+    'Open this box any time: tap your name at the top right of the game, then Turn alerts. Press the green Turn on alerts button. If the phone asks "Allow notifications?", tap Allow. That is all it takes when it asks.';
+  const refresh =
+    'After changing any setting: pull down on the game page to refresh it, then tap your name, then Turn alerts, then Turn on alerts.';
+
   if (device.os === 'ios') {
     return {
       title: 'How to allow alerts on an iPhone or iPad',
@@ -61,25 +66,27 @@ export function howToAllow(device) {
         device.needsInstall
           ? 'Add the game to the Home Screen first: in Safari tap the Share button, then Add to Home Screen, then Add. Open Big Two from its new icon and sign in there.'
           : 'Make sure you opened Big Two from its Home Screen icon, not from Safari.',
-        press,
+        where,
         "If it never asked, or you tapped Don't Allow: open the phone's Settings app, tap Notifications, find Big Two in the list, and switch on Allow Notifications.",
-        'If Big Two is not in that list: delete its Home Screen icon, add the game to the Home Screen again, open it, sign in, and press Turn on alerts.',
+        'If Big Two is not in that list: delete its Home Screen icon, add the game to the Home Screen again, open it, sign in, and try step 2 again.',
         'Not hearing anything? A Focus or Do Not Disturb can hide alerts: open Settings, then Focus, and allow Big Two.',
       ],
     };
   }
+
   if (device.os === 'android') {
-    const settings =
-      "Still nothing? Open the phone's Settings, then Apps, find your browser, tap Notifications, and make sure they are switched on.";
+    // The same last two resorts for every Android browser: its own master switch, then Android's.
+    const android =
+      "Android may be blocking the browser itself. Open the phone's Settings app, then Apps, then your browser, then Notifications. Switch on All notifications for the browser, and also the category for websites (it may be called Sites or Site notifications). Then try the steps above again.";
     if (device.browser === 'Samsung Internet') {
       return {
         title: 'How to allow alerts in Samsung Internet',
         steps: [
-          press,
-          'If nothing appeared: tap the menu (three lines), then Settings, then Sites and downloads, then Notifications.',
-          'Find this site in the list and switch it on (or switch on notifications at the top).',
-          back,
-          settings,
+          where,
+          'If no question appeared: tap the menu (three lines), then Settings, then Sites and downloads, then Notifications. Make sure notifications are switched on at the top, then find this site and switch it on.',
+          'If you cannot switch it on: tap the menu, then Settings, then Sites and downloads, then Manage website data, find this site and delete its data. You will be signed out: sign in again and repeat step 1.',
+          android,
+          refresh,
         ],
       };
     }
@@ -87,31 +94,33 @@ export function howToAllow(device) {
       return {
         title: 'How to allow alerts in Firefox on Android',
         steps: [
-          press,
-          'If nothing appeared: tap the padlock at the left of the address bar, then Permissions (or Edit site settings), then Notifications, and choose Allow.',
-          back,
-          settings,
+          where,
+          'If no question appeared: tap the padlock at the left of the address bar, then Permissions (or Edit site settings), then Notifications, and choose Allow.',
+          'If you cannot choose Allow: in the same place tap Clear data (or Reset permissions) for this site. You will be signed out: sign in again and repeat step 1.',
+          android,
+          refresh,
         ],
       };
     }
     return {
       title: 'How to allow alerts in Chrome on Android',
       steps: [
-        press,
-        'If nothing appeared: tap the padlock (or the small settings icon) at the left of the address bar.',
-        'Tap Permissions (or Site settings), then Notifications, and choose Allow.',
-        back,
-        settings,
+        where,
+        'If it says alerts are blocked, or no question appeared, Chrome has this site on Block. Reset the site first, which usually works: tap the three dots at the top right, then Settings, then Site settings, then All sites. Search for beeston and tap this site, then tap Delete & reset (some versions say Clear & reset) and confirm. You will be signed out: sign in again, then repeat step 1. Chrome should now ask.',
+        'If you cannot select the site, or step 2 did not help: tap the three dots, then Settings, then Site settings, then Notifications. Switch on the switch at the top that lets sites ask to send notifications. Then, under Blocked, tap this site and choose Allow. (Quick route to the same place: tap the padlock or settings icon at the left of the address bar, then Permissions, then Notifications.)',
+        android,
+        refresh,
       ],
     };
   }
+
   if (device.browser === 'Firefox') {
     return {
       title: 'How to allow alerts in Firefox',
       steps: [
-        press,
+        where,
         'If nothing appeared: click the padlock at the left of the address bar, then Permissions, then Notifications, and allow.',
-        back,
+        refresh,
       ],
     };
   }
@@ -119,18 +128,18 @@ export function howToAllow(device) {
     return {
       title: 'How to allow alerts in Safari',
       steps: [
-        press,
+        where,
         'If nothing appeared: open Safari, then Settings, then Websites, then Notifications, and set this site to Allow.',
-        back,
+        refresh,
       ],
     };
   }
   return {
     title: 'How to allow alerts in this browser',
     steps: [
-      press,
-      'If nothing appeared: click the padlock (or the small settings icon) at the left of the address bar, find Notifications, and choose Allow.',
-      back,
+      where,
+      'If nothing appeared: click the padlock (or the small settings icon) at the left of the address bar, find Notifications, and choose Allow. If it is greyed out, open the browser Settings, then Privacy or Site settings, then Notifications, switch notifications on, and find this site in the Blocked list.',
+      refresh,
     ],
   };
 }
