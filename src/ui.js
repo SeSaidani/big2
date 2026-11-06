@@ -645,7 +645,17 @@ function enterSolo() {
   startGame();
 }
 
-async function enterOnline() {
+// Going online takes a moment (it asks the server who you are). While that is under way, a second request, such as
+// pressing Admin just as the page opens, joins it instead of starting a second copy that would reset the screen.
+let enteringOnline = null;
+function enterOnline() {
+  enteringOnline ??= startOnline().finally(() => {
+    enteringOnline = null;
+  });
+  return enteringOnline;
+}
+
+async function startOnline() {
   gen++; // drops any solo round still waiting on an AI
   busy = false;
   pending.clear();
@@ -2283,6 +2293,9 @@ async function boot() {
   }
   for (const el of document.querySelectorAll('.dev-only')) el.hidden = !devTables;
   if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
-  else startGame();
+  else {
+    startGame();
+    document.body.dataset.online = 'solo'; // started in a solo game (the browser tests wait for this or 'ready')
+  }
 }
 boot();
