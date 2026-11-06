@@ -194,7 +194,7 @@ async function main() {
   const driving = Promise.all([drive(A, stop), drive(B, stop)]);
   const watch = async () => {
     while (moves < 8) await sleep(100);
-    await B.click('leaveBtn');
+    await B.click('homeBtn');
     await B.waitFor(
       `!document.getElementById('lobby').hidden && [...document.querySelectorAll('#gameBox button')].some(b => b.textContent === 'Rejoin your game')`,
       8000,
@@ -312,8 +312,8 @@ async function main() {
     8000,
     'Cancel button',
   );
-  await A.clickButton('#adminGame', 'Cancel game'); // arms
-  await A.clickButton('#adminGame', 'Click again to confirm'); // confirms
+  await A.clickButton('#adminGame', 'Cancel game');
+  await A.confirmPopup();
   await Promise.all(
     [A, B].map((p) => p.waitFor(`document.getElementById('tableMain').hidden`, 10000, 'table gone after the cancel')),
   );
@@ -354,7 +354,7 @@ async function main() {
   await A.waitFor(`!document.getElementById('admin').hidden`, 5000, 'admin on mobile');
   await A.shot('9-mobile-admin');
   await A.clickButton('#adminGame', 'Cancel game');
-  await A.clickButton('#adminGame', 'Click again to confirm');
+  await A.confirmPopup();
   await A.waitFor(`document.getElementById('adminStats').textContent.includes('2 cancelled')`, 8000, 'second cancel');
   await A.size(1400, 900, false);
 
@@ -367,9 +367,7 @@ async function main() {
   await A.ev(
     `(() => { const row = [...document.querySelectorAll('#usersBody tr')].find(r => r.children[0].textContent === 'alice'); const b = [...row.querySelectorAll('button')].find(x => x.textContent === 'Disable'); b.click(); })()`,
   );
-  await A.ev(
-    `(() => { const row = [...document.querySelectorAll('#usersBody tr')].find(r => r.children[0].textContent === 'alice'); const b = [...row.querySelectorAll('button')].find(x => x.textContent === 'Click again to confirm'); b.click(); })()`,
-  );
+  await A.confirmPopup();
   await B.waitFor(
     `!!document.getElementById('form') && !document.getElementById('hand')`,
     15000,

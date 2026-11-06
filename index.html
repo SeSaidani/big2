@@ -93,7 +93,6 @@
           <button type="button" id="modeSolo" class="seg active">Solo</button>
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
-        <span id="soloChip" class="chip solo-only" title="The settings of this game"></span>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
       <button type="button" id="helpBtn" class="ghost help-btn" title="How to play" aria-label="How to play">?</button>
@@ -101,10 +100,10 @@
         <summary id="who" aria-label="Account menu"></summary>
         <div class="menu">
           <button type="button" id="soloStatsBtn" class="ghost">My solo stats</button>
-          <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
-          <button type="button" id="viewBtn" class="ghost online-only" hidden>Switch to player view</button>
-          <button type="button" id="alertsBtn" class="ghost online-only" hidden>Turn alerts</button>
-          <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
+          <button type="button" id="adminBtn" class="ghost" hidden>Admin</button>
+          <button type="button" id="viewBtn" class="ghost" hidden>Switch to player view</button>
+          <button type="button" id="alertsBtn" class="ghost" hidden>Turn alerts</button>
+          <button type="button" id="passwordBtn" class="ghost" hidden>Password</button>
           <button type="button" id="logoutBtn" class="ghost">Log out</button>
         </div>
       </details>
@@ -120,6 +119,15 @@
 
     <div class="layout">
       <main class="table" id="tableMain" aria-label="Game table">
+        <button
+          type="button"
+          id="homeBtn"
+          class="ghost online-only table-home"
+          title="Back to the online home. Your seat is kept."
+        >
+          ‹ Online home
+        </button>
+        <span id="soloChip" class="table-note solo-only" title="The settings of this game"></span>
         <section class="seat seat-north" id="seat-2"></section>
         <section class="seat seat-west" id="seat-1"></section>
         <section class="seat seat-east" id="seat-3"></section>
@@ -150,9 +158,6 @@
               aria-expanded="false"
             >
               Log
-            </button>
-            <button type="button" id="leaveBtn" class="ghost online-only" title="Your seat is kept until the game ends">
-              Back to lobby
             </button>
             <button type="button" id="forfeitBtn" class="ghost online-only" hidden>Leave seat</button>
             <button type="button" id="watchStopBtn" class="ghost online-only" hidden>Stop watching</button>
@@ -489,6 +494,15 @@
       </div>
       <p id="playersMsg" class="muted"></p>
       <div class="row"><button type="button" id="playersClose">Close</button></div>
+    </dialog>
+
+    <dialog id="confirmDlg" class="compact">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <p id="confirmText" class="muted"></p>
+      <div class="row">
+        <button type="button" id="confirmOk" class="danger">Confirm</button>
+        <button type="button" id="confirmCancel" class="ghost">Cancel</button>
+      </div>
     </dialog>
 
     <dialog id="resetDlg" class="compact">

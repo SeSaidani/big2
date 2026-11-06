@@ -49,17 +49,6 @@ async function addPlayer(page, name, expectedRows) {
   );
 }
 
-// A two-step button ("Click again to confirm"). Opening the Admin screen starts a refresh that rebuilds the table and
-// disarms the button, so if the second click finds nothing, start again.
-async function confirmClick(page, selector, label) {
-  for (let i = 0; i < 8; i++) {
-    await page.clickButton(selector, label);
-    await sleep(300);
-    if (await page.clickButton(selector, 'Click again to confirm')) return;
-  }
-  throw new Error(`could not confirm ${label}`);
-}
-
 const playerRows = (page) =>
   page.ev(
     `[...document.querySelectorAll('#playersBody tr')].map((r) => [...r.children].slice(1, 3).map((c) => c.textContent).join(': '))`,
@@ -179,6 +168,44 @@ async function main() {
     'the game starting by itself',
   );
   check('the four seated people got a game without anyone pressing Start', true);
+
+  // ---- getting back to the online home from a game in progress: the seat is kept, and it says if it is your move ----
+  check(
+    'the table has an Online home button in its corner (and the old Back to lobby is gone)',
+    await A.ev(`getComputedStyle(${byId('homeBtn')}).display !== 'none' && !document.getElementById('leaveBtn')`),
+  );
+  const seatKept = () =>
+    A.ev(`fetch('/api/game').then((r) => r.json()).then((j) => !!j.table && j.table.status === 'playing')`);
+  const myMove = await A.ev(`fetch('/api/game').then((r) => r.json()).then((j) => j.table.game.turn === j.table.you)`);
+  await A.click('homeBtn');
+  await A.waitFor(`!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`, 5000, 'the online home');
+  check(
+    'the home button goes to the online home and offers to rejoin the game',
+    (await A.text('gameBox')).includes('Rejoin your game'),
+  );
+  check(
+    'it says it is your turn exactly when it is, on the home screen and as a dot on Online',
+    (await A.ev(`!!document.querySelector('#gameBox .turn-note')`)) === myMove &&
+      (await A.ev(`${byId('modeOnline')}.classList.contains('attention')`)) === myMove,
+    `my move: ${myMove}`,
+  );
+  check('the seat is kept', await seatKept());
+  await A.clickButton('#gameBox', 'Rejoin your game');
+  await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table');
+  await A.click('modeOnline');
+  await A.waitFor(
+    `!${byId('lobbyHome')}.hidden && ${byId('tableMain')}.hidden`,
+    5000,
+    'the online home from the table',
+  );
+  check('the Online button also goes home from the table, and the seat is kept', await seatKept());
+  await toggleAdmin(A);
+  await A.waitFor(`!${byId('admin')}.hidden`, 5000, 'admin');
+  await A.click('modeOnline');
+  await A.waitFor(`${byId('admin')}.hidden && !${byId('lobbyHome')}.hidden`, 5000, 'home from admin');
+  check('and from the Admin screen', true);
+  await A.clickButton('#gameBox', 'Rejoin your game');
+  await A.waitFor(`!${byId('tableMain')}.hidden`, 5000, 'back at the table again');
   const names = await A.ev(`[1, 2, 3].map((i) => document.getElementById('seat-' + i).textContent)`);
   check(
     'the other seats are the roster players, not computers',
@@ -244,9 +271,12 @@ async function main() {
   await A.waitFor(`!${byId('forfeitBtn')}.hidden`, 8000, 'Leave seat offered with five players');
   check('with a fifth player a Leave seat button appears', true);
   await A.click('forfeitBtn');
-  const warn = await A.text('forfeitBtn');
-  check('it asks again and says what it costs', /Click again/.test(warn) && warn.includes('56 points'), warn);
-  await A.click('forfeitBtn');
+  const warn = await A.confirmPopup();
+  check(
+    'it asks in a popup and says what it costs',
+    warn.includes('Leave the game?') && warn.includes('56 points'),
+    warn,
+  );
   await A.waitFor(
     `!${byId('lobbyHome')}.hidden && ${byId('gameBox')}.textContent.includes('Starting')`,
     10000,
@@ -285,7 +315,8 @@ async function main() {
     8000,
     'admin',
   );
-  await confirmClick(A, '#seasonsBody', 'End now');
+  await A.clickButton('#seasonsBody', 'End now');
+  await A.confirmPopup();
   await A.waitFor(
     `document.querySelector('#seasonsBody tr').children[1].textContent === 'past'`,
     8000,

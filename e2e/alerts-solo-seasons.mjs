@@ -34,7 +34,11 @@ const byId = (id) => `document.getElementById(${JSON.stringify(id)})`;
 const setUa = (ua) => A.conn.send('Network.setUserAgentOverride', { userAgent: ua });
 const reloadGame = async () => {
   await A.goto(BASE);
-  await A.waitFor(`${byId('who')}.textContent === 'boss' && !${byId('lobbyHome')}.hidden`, 10000, 'lobby');
+  await A.waitFor(
+    `${byId('who')}.textContent === 'boss' && !${byId('lobbyHome')}.hidden && document.body.dataset.online === 'ready'`,
+    10000,
+    'lobby',
+  );
   await sleep(400); // startAlerts runs just after the lobby appears
 };
 const openAlerts = async () => {
@@ -276,13 +280,13 @@ async function main() {
   );
   await A.waitFor(`${byId('seasonMsg')}.textContent.includes('End now')`, 6000, 'the clash message');
   check('creating a season while one is running explains why not, and what to press', true, await A.text('seasonMsg'));
-  await A.clickButton('#seasonsBody', 'End now'); // arms the button
-  await A.waitFor(
-    `[...document.querySelectorAll('#seasonsBody button')].some((b) => b.textContent === 'Click again to confirm')`,
-    3000,
-    'armed',
+  await A.clickButton('#seasonsBody', 'End now');
+  const saysEnd = await A.confirmPopup();
+  check(
+    'End now asks in a popup that says what happens',
+    /End Season 1 now\?/.test(saysEnd) && saysEnd.includes('not scored'),
+    saysEnd,
   );
-  await A.clickButton('#seasonsBody', 'Click again to confirm');
   await A.waitFor(`document.querySelector('#seasonsBody tr').children[1].textContent === 'past'`, 6000, 'season ended');
   check('End now (confirmed) ends the season at once', (await rows())[0].includes('past'), (await rows())[0]);
   check(

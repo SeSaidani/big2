@@ -153,10 +153,30 @@ button.ghost {
   height: 36px;
   margin: -6px -10px 0 8px;
   padding: 0;
-  font-size: 1.4rem;
-  line-height: 1;
+  font-size: 0; /* the cross is drawn below, not typed: a character sits a little off-centre in its circle */
   background: #0b3a27;
   border-radius: 50%;
+}
+
+.dialog-x::before,
+.dialog-x::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  margin: -1px 0 0 -7px;
+  border-radius: 1px;
+  background: currentcolor;
+}
+
+.dialog-x::before {
+  transform: rotate(45deg);
+}
+
+.dialog-x::after {
+  transform: rotate(-45deg);
 }
 
 .help h2 {
@@ -215,16 +235,6 @@ button.ghost {
 .facts dd {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-/* The settings of the solo game, shown but not editable. */
-.chip {
-  padding: 5px 12px;
-  color: var(--muted);
-  font-size: 0.85rem;
-  white-space: nowrap;
-  border: 1px solid #2a6a4c;
-  border-radius: 999px;
 }
 
 /* The account menu: your name, and what you can do with the account. */
@@ -1817,4 +1827,54 @@ table.solo-stats th:not(:first-child) {
 /* The admin message line takes no room until there is something to say. */
 .tabs + .bad:empty {
   display: none;
+}
+
+/* The confirm button for something that cannot be undone. */
+button.danger {
+  background: #a3262f;
+  border-color: #d4545c;
+  color: #fff;
+  font-weight: 600;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #bb2f39;
+}
+
+/* The settings of the solo game, as a small caption in the corner of the table. */
+.table-note {
+  position: absolute;
+  top: 10px;
+  left: 18px;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+/* Back to the online home: a button in the corner of the table, out of the row of game buttons. */
+.table-home {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  z-index: 2;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+/* It is my move, but I am looking at something else. */
+.turn-note {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+button.attention::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #ff5a4f;
+  vertical-align: middle;
 }
