@@ -376,3 +376,28 @@ test("turning alerts off everywhere removes all of my devices and nobody else's"
     await ctx.app.close();
   }
 });
+
+test('the alert shows the three-card logo: both pictures are served, are PNGs of the right size, and the badge is see-through', async () => {
+  const ctx = await boot();
+  try {
+    const png = async (name) => {
+      const r = await fetch(`${ctx.base}/${name}`); // no sign-in: a browser fetches these by itself
+      assert.equal(r.status, 200, name);
+      assert.equal(r.headers.get('content-type'), 'image/png');
+      const b = Buffer.from(await r.arrayBuffer());
+      assert.equal(b.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', `${name} is a PNG`);
+      return { width: b.readUInt32BE(16), height: b.readUInt32BE(20), colorType: b[25] };
+    };
+    const icon = await png('notify-icon.png');
+    assert.deepEqual([icon.width, icon.height], [192, 192]);
+    const badge = await png('notify-badge.png');
+    assert.deepEqual([badge.width, badge.height], [96, 96]);
+    assert.equal(badge.colorType, 6, 'the badge has an alpha channel: Android keeps only its shape');
+    // The service worker points at exactly these two.
+    const sw = await (await fetch(`${ctx.base}/sw.js`)).text();
+    assert.match(sw, /icon: '\/notify-icon\.png'/);
+    assert.match(sw, /badge: '\/notify-badge\.png'/);
+  } finally {
+    await ctx.app.close();
+  }
+});

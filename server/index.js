@@ -557,6 +557,8 @@ export function createApp(opts = {}) {
     else if (pathname === '/manifest.webmanifest') rel = 'manifest.webmanifest';
     else if (pathname === '/sw.js') rel = 'sw.js';
     else if (/^\/icon-(180|192|512)\.png$/.test(pathname)) rel = pathname.slice(1);
+    else if (pathname === '/notify-icon.png') rel = 'notify-icon.png';
+    else if (pathname === '/notify-badge.png') rel = 'notify-badge.png';
     else if (/^\/src\/[A-Za-z0-9_/-]+(\.[A-Za-z0-9_-]+)*\.js$/.test(pathname) && !pathname.includes('..')) {
       rel = pathname.slice(1);
     }
