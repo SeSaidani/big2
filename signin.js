@@ -45,11 +45,16 @@ $('registerBtn').addEventListener('click', () =>
 );
 
 async function init() {
-  let config = { registrationOpen: false };
+  let config = { registrationOpen: false, label: '' };
   try {
     config = await call('GET', '/api/config');
   } catch {
     /* password sign-in still works without it */
+  }
+  if (config.label) {
+    $('siteLabel').textContent = config.label;
+    show('siteLabel', true);
+    document.title = `${config.label}: ${document.title}`;
   }
   show('registerBtn', !!config.registrationOpen);
   // Only registration needs explaining; with it closed the page is just the logo and the form.

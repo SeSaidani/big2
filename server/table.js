@@ -24,8 +24,8 @@ import {
 } from '../src/game.js';
 import { classify } from '../src/hands.js';
 import { NUM_PLAYERS } from '../src/cards.js';
-import { scoreRound } from '../src/scoring.js';
-import { recordGame, recordCancelled, recordProblem } from './db.js';
+import { scoreRound, forfeitPenalty } from '../src/scoring.js';
+import { recordGame, recordCancelled, recordForfeit, recordProblem } from './db.js';
 
 export class TableError extends Error {
   constructor(status, message) {
@@ -63,6 +63,7 @@ export class Table {
     this.autoTimer = null;
     this.autoKind = null; // 'start' (four seated) | 'next' (a game just ended)
     this.autoAt = null;
+    this.notice = null; // why the table is waiting again after a game was stopped (shown to the people still seated)
   }
 
   static human(user) {
@@ -81,6 +82,7 @@ export class Table {
       turnSince: data.turnSince ?? deps.cfg.now(), // games saved before this was recorded
       autoKind: data.autoKind ?? null,
       autoAt: data.autoAt ?? null,
+      notice: data.notice ?? null,
       chat: data.chat || [],
       version: data.version + 1, // clients reconnecting after a restart must not ignore the first view
     });
@@ -100,6 +102,7 @@ export class Table {
       turnSince: this.turnSince,
       autoKind: this.autoKind,
       autoAt: this.autoAt,
+      notice: this.notice,
       chat: this.chat,
       version: this.version,
     };
@@ -138,7 +141,18 @@ export class Table {
   leave(userId) {
     const i = this.seatOf(userId);
     if (i < 0) return;
-    if (this.status === 'playing') {
+    if (this.deps.auto && this.status !== 'waiting') {
+      // A seat is a promise to the other three. With only as many accounts as seats there is nobody to take it
+      // over, so it cannot be given up; with more, a seat can be left between games, or mid-game at a cost.
+      const players = this.deps.activeUsers();
+      if (players <= this.seats.length) {
+        throw new TableError(
+          409,
+          `There are only ${players} players, so every seat stays filled: nobody can leave until there are more.`,
+        );
+      }
+      if (this.status === 'playing') return this.#forfeit(i);
+    } else if (this.status === 'playing') {
       throw new TableError(
         409,
         'The game is in progress and holds your seat until it finishes or an admin cancels it.',
@@ -172,6 +186,7 @@ export class Table {
 
   // Deals the game. Empty seats (only ever in development) are played by the computer.
   #begin() {
+    this.notice = null;
     let bots = 0;
     this.seats = this.seats.map((s) => {
       if (s.kind !== 'empty') return s;
@@ -332,11 +347,35 @@ export class Table {
 
   // The next game, with the same four people.
   #newRound() {
+    this.notice = null;
     this.game = newGame(this.deps.cfg.rng, null, this.seats.length);
     this.result = null;
     this.status = 'playing';
     this.startedAt = this.deps.cfg.now();
     this.#commit(true);
+  }
+
+  // Someone left a game in progress (only possible when there are more people than seats, so the seat can be
+  // filled). It costs them the most a round can cost; for the three who stay the game is void and counts for nobody.
+  #forfeit(i) {
+    const seat = this.seats[i];
+    const players = this.seats.length;
+    try {
+      recordForfeit(this.deps.db, {
+        userId: seat.userId,
+        seat: i,
+        players,
+        started: this.startedAt,
+        ended: this.deps.cfg.now(),
+        cardsLeft: this.game.hands[i].length,
+        delta: -forfeitPenalty(players),
+      });
+    } catch (err) {
+      this.deps.log('Could not record a forfeit', err);
+    }
+    this.notice = `${seat.name} left the game, so it was stopped. It does not count for anyone else.`;
+    this.seats[i] = EMPTY;
+    this.#toWaiting();
   }
 
   #toWaiting() {
@@ -465,12 +504,25 @@ export class Table {
       result: this.result,
       // ms is what is left on the server's clock: the browser counts down from when it receives this, so a
       // phone with the wrong time still shows the right number of seconds.
+      // What the Leave button would do for this person right now: 'free' (just frees the seat), 'forfeit' (a game
+      // in progress is stopped and they lose the most a round can cost) or null (not allowed).
+      leave: this.#leaveRule(),
+      notice: this.notice,
       next:
         this.autoKind && this.autoAt
           ? { kind: this.autoKind, at: this.autoAt, ms: Math.max(0, this.autoAt - this.deps.cfg.now()) }
           : null,
       hands: this.status === 'done' ? g.hands.map((h) => h.slice()) : null,
     };
+  }
+
+  #leaveRule() {
+    if (this.status === 'waiting') return 'free';
+    if (this.deps.auto) {
+      if (this.deps.activeUsers() <= this.seats.length) return null;
+      return this.status === 'playing' ? 'forfeit' : 'free';
+    }
+    return this.status === 'playing' ? null : 'free';
   }
 
   // Public summary for everyone, seated or not.

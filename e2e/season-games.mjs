@@ -127,6 +127,51 @@ async function main() {
   await A.click('viewBtn');
   check('and switching back brings it back', await A.ev(`!${byId('adminBtn')}.hidden`));
 
+  // ---- leaving a seat: not with only four players, at a cost once there is a fifth ----
+  check(
+    'with only four accounts there is no way to leave a seat in a game',
+    await A.ev(`${byId('forfeitBtn')}.hidden`),
+  );
+  const db2 = openDb(env.env.DB_FILE);
+  await createUser(db2, 'eve', PW); // a fifth account: now the seat could be filled by someone else
+  db2.close();
+  await A.goto(BASE);
+  await A.waitFor(
+    `!${byId('tableMain')}.hidden && !${byId('forfeitBtn')}.hidden`,
+    15000,
+    'Leave seat offered with five accounts',
+  );
+  check('with a fifth account a Leave seat button appears', true);
+  await A.shot('4b-leave-seat');
+  await A.click('forfeitBtn');
+  const warn = await A.text('forfeitBtn');
+  check('it asks again and says what it costs', /Click again/.test(warn) && warn.includes('56 points'), warn);
+  await A.click('forfeitBtn');
+  await A.waitFor(
+    `!${byId('lobbyHome')}.hidden && ${byId('gameBox')}.textContent.includes('Waiting for players')`,
+    10000,
+    'the lobby after leaving',
+  );
+  const lobby = await A.text('gameBox');
+  check(
+    'leaving the game takes you to the lobby, and the other three are still waiting for a fourth',
+    lobby.includes('3 of 4'),
+    lobby.replace(/\s+/g, ' ').slice(0, 100),
+  );
+  const dbRead = openDb(env.env.DB_FILE);
+  const forfeit = dbRead
+    .prepare(
+      'SELECT g.status, r.delta, u.name FROM games g JOIN results r ON r.game_id = g.id JOIN users u ON u.id = r.user_id',
+    )
+    .all();
+  dbRead.close();
+  check(
+    'it was recorded as the worst round for the leaver only: -56, and nobody else has a result',
+    forfeit.length === 1 && forfeit[0].status === 'forfeit' && forfeit[0].delta === -56 && forfeit[0].name === 'boss',
+    JSON.stringify(forfeit.map((r) => ({ ...r }))),
+  );
+  await A.shot('4c-after-leaving');
+
   // ---- ending the season stops the game and closes the table ----
   await A.ev(
     `fetch('/api/seasons').then(r => r.json()).then(j => fetch('/api/admin/seasons/' + j.seasons[0].id + '/end', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).then(r => r.status)`,
@@ -136,7 +181,7 @@ async function main() {
     10000,
     'the lobby saying there is no season',
   );
-  check('ending the season stops the game and the lobby says no season is running', true, await A.text('gameBox'));
+  check('ending the season closes the table and the lobby says no season is running', true, await A.text('gameBox'));
   await A.click('who');
   await A.click('viewBtn');
   await A.waitFor(`${byId('gameBox')}.textContent.includes('There is no table right now')`, 5000, 'the player wording');

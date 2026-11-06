@@ -3,7 +3,7 @@
 
 import { isJoker, suitOf, isRedSuit, cardName, sortByRank, sortBySuit } from './cards.js';
 import { cardSVG } from './card-art.js';
-import { scoreRound } from './scoring.js';
+import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
 import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip } from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
@@ -763,6 +763,39 @@ function syncCountdown() {
     countdownTimer = setInterval(renderCountdown, 500);
   }
   renderCountdown();
+  renderLeaveButtons();
+}
+
+// What Leave can do for me right now comes from the server (t.leave): 'free', 'forfeit' (mid-game: it costs the most a
+// round can) or null. Leaving mid-game asks twice, and says what it costs.
+let forfeitTimer = null;
+const resetForfeitBtn = () => {
+  clearTimeout(forfeitTimer);
+  forfeitTimer = null;
+  $('forfeitBtn').textContent = 'Leave seat';
+};
+function renderLeaveButtons() {
+  const rule = table ? table.leave : null;
+  const forfeit = !!table && table.status === 'playing' && rule === 'forfeit';
+  show('forfeitBtn', forfeit);
+  if (!forfeit) resetForfeitBtn();
+  if (!devTables) show('endLeave', !!table && table.status === 'done' && rule === 'free');
+}
+
+async function forfeitSeat() {
+  if (!forfeitTimer) {
+    $('forfeitBtn').textContent = `Click again: leave and lose ${forfeitPenalty(table.seats.length)} points`;
+    forfeitTimer = setTimeout(resetForfeitBtn, 5000);
+    return;
+  }
+  resetForfeitBtn();
+  try {
+    const r = await api.leave();
+    if (r.game !== undefined) lobbyGame = r.game;
+    onTable(r.table);
+  } catch (err) {
+    setStatus(err.message);
+  }
 }
 
 function renderViewBtn() {
@@ -875,6 +908,7 @@ function renderLobbyHome() {
 }
 
 function renderWaitRoom(t) {
+  $('waitNotice').textContent = t.notice || '';
   const needed = t.seats.filter((s) => s.kind === 'empty').length;
   $('waitInfo').textContent = devTables
     ? `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI, and a game with computer players does not count on the leaderboard.`
@@ -1207,6 +1241,9 @@ function endOnlineRound(t, alreadyShown) {
   if (r && !r.saved) notes.push('This result could not be saved to the leaderboard.');
   else if (r && r.hasAi) notes.push('This game had computer players, so it is not on the leaderboard.');
   if (devTables && !t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
+  if (!devTables && t.leave === null) {
+    notes.push('There are only as many players as seats, so every seat stays filled.');
+  }
   $('endNote').className = 'muted';
   $('endNote').textContent = notes.join(' ');
   show('againBtn', devTables && t.isHost); // production games follow on by themselves
@@ -1855,6 +1892,7 @@ $('createBtn').addEventListener('click', () =>
 $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
 $('leaveBtn').addEventListener('click', backToLobby);
+$('forfeitBtn').addEventListener('click', forfeitSeat);
 $('endLeave').addEventListener('click', leaveTable);
 $('chatSend').addEventListener('click', sendChat);
 $('chatInput').addEventListener('keydown', (e) => e.key === 'Enter' && sendChat());
@@ -1892,7 +1930,14 @@ async function boot() {
     flushSoloResults();
   }
   try {
-    devTables = !!(await api.config()).devTables;
+    const config = await api.config();
+    devTables = !!config.devTables;
+    if (config.label) {
+      // A test copy says so on every page, so it cannot be mistaken for the real one.
+      $('siteLabel').textContent = config.label;
+      show('siteLabel', true);
+      document.title = `${config.label}: ${document.title}`;
+    }
   } catch {
     /* the production rules are the safe default */
   }

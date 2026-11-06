@@ -49,6 +49,10 @@ export function rateFor(cardsLeft, players = NUM_PLAYERS) {
   return table.find((r) => cardsLeft <= r.upTo).rate;
 }
 
+// What walking out of a game costs: the most a player can lose in a round (holding the most cards a loser can,
+// at the top rate). At a table of four that is 14 cards x 4 = 56 points.
+export const forfeitPenalty = (players) => MOST_CARDS[players] * rateFor(MOST_CARDS[players], players);
+
 export const isBonusPlay = (cls) => !!cls && cls.type === FIVE && cls.cat >= STRAIGHT_FLUSH;
 
 // Score a finished round from the final game state (state.trick is the

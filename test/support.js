@@ -201,6 +201,8 @@ const TOP = [
   'game',
   'result',
   'next',
+  'leave',
+  'notice',
   'hands',
 ].sort();
 const SEAT = ['kind', 'name', 'level', 'count', 'online'].sort();

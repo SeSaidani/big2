@@ -140,6 +140,9 @@ export function createApp(opts = {}) {
     startDelayMs: opts.startDelayMs ?? 10_000, // from the fourth person sitting down to the deal
     nextGameDelayMs: opts.nextGameDelayMs ?? 30_000, // how long the results stay up before the next game
     clockMs: opts.clockMs ?? 5000, // how often the table checks the seasons
+    // A name for this copy of the site ("Staging"), shown on every page and in the app's name, so a test copy can
+    // never be mistaken for the real one. Plain letters, digits, spaces and . _ - only.
+    label: /^[A-Za-z0-9 ._-]{1,20}$/.test(opts.label ?? '') ? opts.label : '',
   };
   const ownsDb = !opts.db;
   const db = opts.db ?? openDb(opts.dbFile ?? ':memory:');
@@ -401,6 +404,7 @@ export function createApp(opts = {}) {
       return sendJson(res, 200, {
         registrationOpen: registrationOpen(),
         devTables: cfg.devTables,
+        label: cfg.label,
       });
     }
     if (p === '/api/register' && m === 'POST') {
@@ -550,6 +554,18 @@ export function createApp(opts = {}) {
     }
     const file = rel && path.resolve(ROOT, rel);
     if (!file || !file.startsWith(ROOT + path.sep)) throw new HttpError(404, 'Not found.');
+    if (rel === 'manifest.webmanifest' && cfg.label) {
+      // The installed icon carries the label too ("Big Two (Staging)"), so two copies on one phone are told apart.
+      return fs.readFile(file, 'utf8', (err, text) => {
+        if (err) return sendJson(res, 404, { error: 'Not found.' });
+        const m = JSON.parse(text);
+        m.name = `${m.name} (${cfg.label})`;
+        m.short_name = `${m.short_name} (${cfg.label})`.slice(0, 30);
+        const body = JSON.stringify(m);
+        res.writeHead(200, { 'Content-Type': TYPES['.webmanifest'], 'Cache-Control': 'no-store' });
+        res.end(req.method === 'HEAD' ? undefined : body);
+      });
+    }
     fs.readFile(file, (err, data) => {
       if (err) return sendJson(res, 404, { error: 'Not found.' });
       res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)], 'Cache-Control': 'no-store' });
@@ -606,6 +622,7 @@ if (isMain(import.meta.url)) {
     trustProxy: env.TRUST_PROXY === '1',
     secureCookies: env.SECURE_COOKIES === '1',
     publicUrl: env.PUBLIC_URL || '',
+    label: env.SITE_LABEL || '',
     ...(env.TABLE_START_DELAY_MS ? { startDelayMs: Number(env.TABLE_START_DELAY_MS) } : {}),
     ...(env.TABLE_NEXT_GAME_DELAY_MS ? { nextGameDelayMs: Number(env.TABLE_NEXT_GAME_DELAY_MS) } : {}),
     notify: {

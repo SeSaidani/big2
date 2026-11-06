@@ -263,6 +263,33 @@ export function loadGameRecord(db, gameId) {
 
 // A game an admin ended: kept for the record, but with no results rows, so it
 // can never reach a leaderboard.
+// A player left a game in progress. The game is void for everyone else (no result rows for them, so it counts for
+// nobody), and the leaver gets the worst result a round can give, which does count for them. Status 'forfeit'.
+export function recordForfeit(db, { userId, seat, players, started, ended, cardsLeft, delta }) {
+  if (!(delta < 0)) throw new Error('A forfeit costs points');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const g = db
+      .prepare(
+        "INSERT INTO games (started, ended, has_ai, multiplier, status, players) VALUES (?, ?, 0, 1, 'forfeit', ?)",
+      )
+      .run(started, ended, players);
+    const gameId = Number(g.lastInsertRowid);
+    db.prepare('INSERT INTO results (game_id, seat, user_id, cards_left, delta) VALUES (?, ?, ?, ?, ?)').run(
+      gameId,
+      seat,
+      userId,
+      cardsLeft,
+      delta,
+    );
+    db.exec('COMMIT');
+    return gameId;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function recordCancelled(db, { started, ended, hasAi }) {
   const g = db
     .prepare("INSERT INTO games (started, ended, has_ai, multiplier, status) VALUES (?, ?, ?, 1, 'cancelled')")
@@ -315,7 +342,7 @@ export function leaderboard(db, kind, { season = 'current', sort = 'points', min
               ROUND(1.0 * SUM(r.delta) / COUNT(*), 2) AS perGame,
               ROUND(100.0 * SUM(r.delta > 0) / COUNT(*), 1) AS winPct
        FROM results r JOIN games g ON g.id = r.game_id JOIN users u ON u.id = r.user_id
-       WHERE g.has_ai = ? AND g.status = 'finished' AND g.ended >= ? AND g.ended < ?
+       WHERE g.has_ai = ? AND g.status IN ('finished', 'forfeit') AND g.ended >= ? AND g.ended < ?
        GROUP BY r.user_id HAVING COUNT(*) >= ?
        ORDER BY ${order} LIMIT 100`,
     )
@@ -466,5 +493,6 @@ export function stats(db) {
     users: one('SELECT COUNT(*) AS n FROM users'),
     gamesFinished: one("SELECT COUNT(*) AS n FROM games WHERE status = 'finished'"),
     gamesCancelled: one("SELECT COUNT(*) AS n FROM games WHERE status = 'cancelled'"),
+    gamesForfeited: one("SELECT COUNT(*) AS n FROM games WHERE status = 'forfeit'"),
   };
 }

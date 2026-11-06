@@ -616,3 +616,35 @@ test('a running game survives a server restart and carries on to a scored finish
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a test copy of the site says what it is, on the sign-in page, in the config and in the installed app name', async () => {
+  const plain = await boot();
+  try {
+    assert.equal((await new Client(plain.base).req('GET', '/api/config')).json.label, '');
+    const m = await (await fetch(`${plain.base}/manifest.webmanifest`)).json();
+    assert.equal(m.name, 'Big Two · Jokers Wild', 'the real site keeps its own name');
+  } finally {
+    await plain.app.close();
+  }
+  const staging = await boot({ label: 'Staging' });
+  try {
+    assert.equal((await new Client(staging.base).req('GET', '/api/config')).json.label, 'Staging');
+    const m = await (await fetch(`${staging.base}/manifest.webmanifest`)).json();
+    assert.equal(m.name, 'Big Two · Jokers Wild (Staging)');
+    assert.match(m.short_name, /^Big Two \(Staging\)$/);
+    assert.ok(m.icons.length >= 2, 'the rest of the manifest is untouched');
+    const page = await (await fetch(`${staging.base}/`)).text();
+    assert.ok(page.includes('id="siteLabel"'), 'the sign-in page has the badge');
+  } finally {
+    await staging.app.close();
+  }
+  // A label is plain words only: anything else is ignored, never put into a page or a file.
+  for (const bad of ['<script>alert(1)</script>', 'a'.repeat(21), '', 'x"y']) {
+    const ctx = await boot({ label: bad });
+    try {
+      assert.equal((await new Client(ctx.base).req('GET', '/api/config')).json.label, '', JSON.stringify(bad));
+    } finally {
+      await ctx.app.close();
+    }
+  }
+});

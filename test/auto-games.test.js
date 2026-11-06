@@ -137,12 +137,14 @@ test('someone who leaves the results is replaced before the next game starts', a
   const ctx = await boot({ ...fast, nextGameDelayMs: 600, rng: mulberry32(7) });
   try {
     const people = await sitDown(ctx, ['pam', 'quin', 'ros', 'sam']);
+    await makeUser(ctx, 'tomx'); // a fifth account, so there is someone to take a seat over
     for (const c of people) driveEasy(c, c.ev, () => tableOf(ctx).game);
     await people[0].ev.waitFor(isDone, 20000);
     assert.equal((await people[3].req('POST', '/api/game/leave')).status, 200, 'leaving the results is allowed');
+    assert.equal(count(ctx, "SELECT COUNT(*) AS n FROM games WHERE status = 'forfeit'"), 0, 'and costs nothing');
     await until(() => tableOf(ctx).status === 'waiting', 3000, 'waiting for a replacement');
     assert.equal(tableOf(ctx).humans().length, 3);
-    const [tom] = await sitDown(ctx, ['tom']);
+    const [tom] = await sitDown(ctx, ['tomy']);
     await until(() => tableOf(ctx).status === 'playing', 3000, 'the next game');
     assert.ok(tableOf(ctx).seats.some((s) => s.userId === tom.user.id));
     assert.ok(!tableOf(ctx).seats.some((s) => s.userId === people[3].user.id));
@@ -238,5 +240,78 @@ test('a cancelled game leaves a fresh empty table; a restart in the countdown ca
   } finally {
     await ctx.app.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('with only four accounts nobody can leave a seat in a game or on the results; the waiting room is free', async () => {
+  const ctx = await boot({ ...fast, rng: mulberry32(7) });
+  try {
+    const people = await sitDown(ctx, ['pam', 'quin', 'ros', 'sam']);
+    assert.equal(tableOf(ctx).view(people[0].user.id).leave, 'free', 'during the countdown nothing is promised yet');
+    await until(() => tableOf(ctx).status === 'playing', 3000, 'a game in progress');
+    assert.equal(tableOf(ctx).view(people[0].user.id).leave, null, 'once it starts, leaving is not on offer');
+    const refused = await people[3].req('POST', '/api/game/leave');
+    assert.equal(refused.status, 409);
+    assert.match(refused.json.error, /only 4 players/);
+    assert.equal(tableOf(ctx).seats.filter((s) => s.kind === 'human').length, 4, 'nobody left');
+    for (const c of people) driveEasy(c, c.ev, () => tableOf(ctx).game);
+    tableOf(ctx).touch();
+    await people[0].ev.waitFor(isDone, 20000);
+    assert.equal((await people[3].req('POST', '/api/game/leave')).status, 409, 'nor from the results');
+    assert.equal(count(ctx, "SELECT COUNT(*) AS n FROM games WHERE status = 'forfeit'"), 0);
+    // Before a game starts nothing is promised yet, so a seat can be given up and taken again.
+    const solo = await boot({ ...fast, startDelayMs: 5000 });
+    try {
+      const [a] = await sitDown(solo, ['pam']);
+      assert.equal(tableOf(solo).view(a.user.id).leave, 'free');
+      assert.equal((await a.req('POST', '/api/game/leave')).status, 200);
+      assert.equal(tableOf(solo).humans().length, 0);
+    } finally {
+      await solo.app.close();
+    }
+  } finally {
+    await ctx.app.close();
+  }
+});
+
+test('with more people than seats, leaving a game costs the most a round can, and the game is void for the others', async () => {
+  const ctx = await boot({ ...fast, rng: mulberry32(7) });
+  try {
+    const people = await sitDown(ctx, ['pam', 'quin', 'ros', 'sam']);
+    const spare = await makeUser(ctx, 'tomz'); // a fifth account: the seat can be filled, so it can be left
+    await until(() => tableOf(ctx).status === 'playing', 3000, 'a game in progress');
+    assert.equal(tableOf(ctx).view(people[3].user.id).leave, 'forfeit');
+    const left = await people[3].req('POST', '/api/game/leave');
+    assert.equal(left.status, 200, JSON.stringify(left.json));
+
+    // The leaver: the worst round there is, and it counts for them (4 players: 14 cards x 4 = 56).
+    const rows = ctx.app.db.prepare('SELECT game_id, user_id, delta FROM results').all();
+    assert.equal(rows.length, 1, 'only the leaver has a result: the game counts for nobody else');
+    assert.equal(rows[0].user_id, people[3].user.id);
+    assert.equal(rows[0].delta, -56);
+    assert.equal(count(ctx, "SELECT COUNT(*) AS n FROM games WHERE status = 'forfeit'"), 1);
+    assert.equal(count(ctx, "SELECT COUNT(*) AS n FROM games WHERE status = 'finished'"), 0);
+    const board = (await people[0].req('GET', '/api/leaderboard')).json.rows;
+    assert.deepEqual(
+      board.map((r) => [r.name, r.games, r.wins, r.points]),
+      [['sam', 1, 0, -56]],
+      'the leaderboard has the leaver, with the loss, and nobody else',
+    );
+    assert.equal((await people[3].req('GET', '/api/game')).json.table, null, 'the leaver is no longer seated');
+
+    // The three who stayed: the table waits for a replacement, and says why.
+    assert.equal(tableOf(ctx).status, 'waiting');
+    assert.equal(tableOf(ctx).humans().length, 3);
+    const stayed = tableOf(ctx).view(people[0].user.id);
+    assert.match(stayed.notice, /sam left the game.*does not count for anyone else/);
+    spare.ev = spare.openEvents();
+    await spare.ev.waitFor((m) => m.event === 'lobby');
+    assert.equal((await spare.req('POST', '/api/game/join')).status, 200);
+    await until(() => tableOf(ctx).status === 'playing', 3000, 'a new game with the replacement');
+    assert.equal(tableOf(ctx).view(people[0].user.id).notice, null, 'the notice goes when a game starts');
+    assert.ok(tableOf(ctx).seats.some((s) => s.userId === spare.user.id));
+    assert.equal(count(ctx, "SELECT COUNT(*) AS n FROM games WHERE status = 'finished'"), 0);
+  } finally {
+    await ctx.app.close();
   }
 });

@@ -282,7 +282,7 @@ test('the service worker is served, and the old phone and text routes are gone',
       assert.equal((await user.req(m, p, {})).status, 404, `${p} is gone`);
     }
     const config = (await user.req('GET', '/api/config')).json;
-    assert.deepEqual(Object.keys(config).sort(), ['devTables', 'registrationOpen']);
+    assert.deepEqual(Object.keys(config).sort(), ['devTables', 'label', 'registrationOpen']);
     const me = (await user.req('GET', '/api/me')).json.user;
     assert.deepEqual(Object.keys(me).sort(), ['id', 'isAdmin', 'name']);
   } finally {

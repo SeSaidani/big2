@@ -22,6 +22,8 @@ export class Lobby {
       ...deps,
       auto: this.auto,
       seasonRunning: () => !!resolveSeason(deps.db, 'current', deps.cfg.now()),
+      // Accounts that could take a seat: leaving one is only possible when there are more of them than seats.
+      activeUsers: () => deps.db.prepare('SELECT COUNT(*) AS n FROM users WHERE disabled = 0').get().n,
       isOnline: (userId) => deps.hub.conns.has(userId),
       persist: (t) => this.#persist(t),
       onView: (t) => this.#pushViews(t),

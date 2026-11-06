@@ -87,6 +87,7 @@
         </svg>
         <span class="sr-only">Big Two, 4 jokers wild</span>
       </h1>
+      <span id="siteLabel" class="site-label" hidden></span>
       <div class="controls">
         <div class="mode" role="group" aria-label="Mode">
           <button type="button" id="modeSolo" class="seg active">Solo</button>
@@ -153,6 +154,7 @@
             <button type="button" id="leaveBtn" class="ghost online-only" title="Your seat is kept until the game ends">
               Back to lobby
             </button>
+            <button type="button" id="forfeitBtn" class="ghost online-only" hidden>Leave seat</button>
           </div>
         </section>
       </main>
@@ -256,6 +258,7 @@
               Chat
             </button>
           </div>
+          <p id="waitNotice" class="muted"></p>
           <p id="waitCount" class="alerts-status"></p>
           <p id="waitMsg" class="bad"></p>
         </section>
