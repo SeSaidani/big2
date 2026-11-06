@@ -94,6 +94,42 @@ async function main() {
     8000,
     'admin',
   );
+  // ---- the Admin screen is tabbed: one section at a time, and it remembers where you were ----
+  const tabsNow = () =>
+    A.ev(
+      `[...document.querySelectorAll('[role=tab]')].map((t) => t.textContent.trim() + ':' + t.getAttribute('aria-selected'))`,
+    );
+  const panelsNow = () =>
+    A.ev(`[...document.querySelectorAll('[role=tabpanel]')].filter((p) => !p.hidden).map((p) => p.id)`);
+  check(
+    'Admin has four tabs and opens on Seasons while the season still needs players',
+    (await tabsNow()).join(' ') === 'Overview:false Seasons:true Users:false Audit log:false' &&
+      (await panelsNow()).join() === 'admin-seasons',
+    (await tabsNow()).join(' '),
+  );
+  await A.click('tab-users');
+  check(
+    'the Users tab shows the user list and the new-user form, and nothing else',
+    (await panelsNow()).join() === 'admin-users' &&
+      (await A.ev(
+        `!!document.querySelector('#admin-users #createUserBtn') && !!document.querySelector('#admin-users #usersBody tr')`,
+      )),
+  );
+  await A.click('tab-audit');
+  check('the Audit log tab shows only the log', (await panelsNow()).join() === 'admin-audit');
+  await A.ev(
+    `document.getElementById('tab-audit').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`,
+  );
+  check(
+    'the right arrow moves along the tabs, wrapping round to Overview',
+    (await panelsNow()).join() === 'admin-overview' &&
+      (await A.ev(
+        `document.activeElement.id === 'tab-overview' && document.getElementById('adminStats').textContent.includes('accounts')`,
+      )),
+  );
+  await A.shot('1b-admin-overview-tab');
+  await A.click('tab-seasons');
+
   const cols = await A.ev(`[...document.querySelectorAll('.lb.users th')].map((t) => t.textContent)`);
   check('the seasons table has a Players column', cols.includes('Players'));
   check(
@@ -299,6 +335,22 @@ async function main() {
   await toggleAdmin(A);
   await A.waitFor(`${byId('gameBox')}.textContent.includes('bob, cat, dan, eve')`, 8000, 'the new season table');
   check('and its table opens with the four ticked players, in the order ticked', true);
+
+  // ---- the tab you left on is the one you come back to ----
+  await A.click('tab-audit');
+  await A.goto(BASE);
+  await A.waitFor(
+    `document.getElementById('who').textContent === 'boss' && !document.getElementById('lobbyHome').hidden`,
+    10000,
+    'the lobby after a reload',
+  );
+  await toggleAdmin(A);
+  await A.waitFor(`!${byId('admin')}.hidden`, 8000, 'admin again');
+  check(
+    'after a reload Admin opens on the tab you left it on',
+    (await panelsNow()).join() === 'admin-audit',
+    (await tabsNow()).join(' '),
+  );
 }
 
 let failed = false;

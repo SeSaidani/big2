@@ -96,12 +96,16 @@ async function main() {
   const iWon = title.includes('You win');
   check('a real solo game ran to the end', true, title);
   await A.shot('2-win-screen');
-  check('the win screen offers My solo stats', await A.ev(`getComputedStyle(${byId('endStats')}).display !== 'none'`));
-  await A.click('endStats');
+  check(
+    'the win screen does not carry My solo stats: they are in the account menu',
+    await A.ev(`!document.getElementById('endStats')`),
+  );
+  await A.click('who');
+  await A.click('soloStatsBtn');
   await A.waitFor(
     `${byId('soloStatsDlg')}.open && ${byId('soloStatsBody')}.textContent.includes('Overall')`,
     8000,
-    'stats from the win screen',
+    'stats from the account menu',
   );
 
   // The round is in exactly the right rows.

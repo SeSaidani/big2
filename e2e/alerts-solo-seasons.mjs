@@ -228,12 +228,12 @@ async function main() {
   await A.ev(`${byId('overlay')}.hidden = false`); // as when a round has just ended
   const shown = (id) => A.ev(`getComputedStyle(${byId(id)}).display !== 'none'`);
   check(
-    'solo win screen: Play again, Change level or players, Close and Go online are all there; Leave table is not',
+    'solo win screen: Play again, Change level or players and Close are there; Leave table, My solo stats and Go online are not',
     (await shown('againBtn')) &&
       (await shown('againNewBtn')) &&
       (await shown('endClose')) &&
-      (await shown('endOnline')) &&
-      !(await shown('endLeave')),
+      !(await shown('endLeave')) &&
+      (await A.ev(`!document.getElementById('endStats') && !document.getElementById('endOnline')`)),
   );
   await A.click('endClose');
   check('Close lets you look at the finished table', await A.ev(`${byId('overlay')}.hidden`));
@@ -253,13 +253,10 @@ async function main() {
     await A.text('soloChip'),
   );
   await A.ev(`${byId('overlay')}.hidden = false`);
-  await A.click('endOnline');
+  await A.click('modeOnline');
   await A.waitFor(`document.body.classList.contains('online') && ${byId('overlay')}.hidden`, 8000, 'online lobby');
-  check('"Go online" leaves the solo game for the online lobby', true);
-  check(
-    'online, none of the solo-only buttons show',
-    !(await shown('againNewBtn')) && !(await shown('endClose')) && !(await shown('endOnline')),
-  );
+  check('the Online switch leaves the solo game for the online lobby', true);
+  check('online, none of the solo-only buttons show', !(await shown('againNewBtn')) && !(await shown('endClose')));
 
   // ---------------- ending and creating seasons ----------------
   await A.click('who');

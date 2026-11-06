@@ -565,7 +565,6 @@ $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRo
 // After a solo round: choose the level and players first, just look at the table, or go to the online lobby.
 $('againNewBtn').addEventListener('click', () => $('newBtn').click());
 $('endClose').addEventListener('click', () => ($('overlay').hidden = true));
-$('endOnline').addEventListener('click', () => $('modeOnline').click());
 // The play log (and the chat under it). Beside the table it can be folded away. On a phone there is
 // no room beside the table, so it is a sheet over it: the Log button opens it, the × closes it.
 const logPanel = document.querySelector('.log');
@@ -1399,6 +1398,36 @@ async function refreshAdmin() {
   }
 }
 
+// ---- admin tabs ----
+const ADMIN_TABS = ['overview', 'seasons', 'users', 'audit'];
+function savedAdminTab() {
+  try {
+    const t = localStorage.getItem('big2.adminTab');
+    return ADMIN_TABS.includes(t) ? t : null;
+  } catch {
+    return null; // storage can be blocked: just use the default
+  }
+}
+// One section at a time. The panels all stay in the page (they are only hidden), so they keep being updated.
+function showAdminTab(name, focus = false) {
+  for (const t of ADMIN_TABS) {
+    const on = t === name;
+    const tab = $(`tab-${t}`);
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    $(`admin-${t}`).hidden = !on;
+    if (on && focus) tab.focus();
+  }
+  try {
+    localStorage.setItem('big2.adminTab', name);
+  } catch {
+    /* not remembered */
+  }
+}
+// The tab you were last on; the first time, Seasons if the season still needs players, otherwise Overview.
+const firstAdminTab = () =>
+  savedAdminTab() ?? (lobbySeason && lobbySeason.state === 'needs-players' ? 'seasons' : 'overview');
+
 // ---- seasons (admin) ----
 const pad2 = (n) => String(n).padStart(2, '0');
 // A <input type="datetime-local"> value, in the browser's local time.
@@ -2053,7 +2082,19 @@ $('viewBtn').addEventListener('click', () => {
 $('adminBtn').addEventListener('click', () => {
   adminView = !adminView;
   route();
-  if (adminView) refreshAdmin();
+  if (adminView) {
+    showAdminTab(firstAdminTab());
+    refreshAdmin();
+  }
+});
+for (const t of ADMIN_TABS) $(`tab-${t}`).addEventListener('click', () => showAdminTab(t));
+// Arrow keys move along the tabs (and Home and End jump), as people expect of a tab row.
+document.querySelector('.tabs').addEventListener('keydown', (e) => {
+  const at = ADMIN_TABS.findIndex((t) => $(`tab-${t}`).getAttribute('aria-selected') === 'true');
+  const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: ADMIN_TABS.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  showAdminTab(ADMIN_TABS[(to + ADMIN_TABS.length) % ADMIN_TABS.length], true);
 });
 $('alertsBtn').addEventListener('click', () => {
   $('account').open = false;
@@ -2074,7 +2115,6 @@ $('alertsBannerLater').addEventListener('click', () => {
 });
 $('iosOk').addEventListener('click', () => $('iosDlg').close());
 $('soloStatsBtn').addEventListener('click', openSoloStats);
-$('endStats').addEventListener('click', openSoloStats);
 $('soloStatsClose').addEventListener('click', () => $('soloStatsDlg').close());
 $('soloStatsX').addEventListener('click', () => $('soloStatsDlg').close());
 $('passwordBtn').addEventListener('click', () => {

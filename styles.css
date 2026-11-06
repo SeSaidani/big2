@@ -1747,3 +1747,74 @@ table.solo-stats th:not(:first-child) {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 4px 12px;
 }
+
+/* Admin sections: a row of tabs, one panel at a time. It scrolls sideways rather than wrapping on a narrow phone. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid #3c8a68;
+  margin-bottom: 4px;
+}
+
+.tab,
+.tab:hover:not(:disabled) {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.tab[aria-selected='true'],
+.tab[aria-selected='true']:hover:not(:disabled) {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* On a desktop the dropdowns and the small form popups need not be as roomy as on a phone, where they are
+   sized for a thumb: so these only apply to a wide screen. */
+@media (min-width: 701px) {
+  select {
+    font-size: 0.9rem;
+    padding: 4px 10px;
+  }
+
+  dialog.compact {
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    padding: 16px 20px;
+  }
+
+  dialog.compact h2 {
+    margin: 0 0 8px;
+    font-size: 1.15rem;
+  }
+
+  dialog.compact .field {
+    margin: 8px 0;
+  }
+
+  dialog.compact input,
+  dialog.compact select {
+    padding: 5px 9px;
+    font-size: 0.9rem;
+  }
+}
+
+/* The admin message line takes no room until there is something to say. */
+.tabs + .bad:empty {
+  display: none;
+}
