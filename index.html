@@ -16,76 +16,78 @@
   <body class="solo">
     <header class="topbar">
       <h1>
-        <svg class="brand-logo" viewBox="0 0 266 64" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-          <g transform="translate(38 61) scale(0.4) translate(-150 -165)">
-            <g transform="rotate(-30 150 165)">
+        <button type="button" id="brandBtn" class="brand-btn" title="Lobby">
+          <svg class="brand-logo" viewBox="0 0 266 64" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+            <g transform="translate(38 61) scale(0.4) translate(-150 -165)">
+              <g transform="rotate(-30 150 165)">
+                <rect
+                  x="115"
+                  y="22"
+                  width="70"
+                  height="98"
+                  rx="8"
+                  fill="#f7f3e8"
+                  stroke="#000"
+                  stroke-opacity="0.3"
+                  stroke-width="3"
+                />
+                <g transform="translate(150 78) scale(1.9)" fill="#c8283c"><path d="M0-10 7 0 0 10-7 0Z" /></g>
+              </g>
+              <g transform="rotate(30 150 165)">
+                <rect
+                  x="115"
+                  y="22"
+                  width="70"
+                  height="98"
+                  rx="8"
+                  fill="#f6e7b0"
+                  stroke="#000"
+                  stroke-opacity="0.3"
+                  stroke-width="3"
+                />
+                <path
+                  transform="translate(150 72) scale(1.5)"
+                  fill="#e0b43c"
+                  stroke="#8a6a12"
+                  stroke-width="1.6"
+                  d="M0-18 5.3-6.2 18-5.6 8.2 2.6 11.2 15 0 8.4-11.2 15-8.2 2.6-18-5.6-5.3-6.2Z"
+                />
+              </g>
               <rect
                 x="115"
-                y="22"
+                y="14"
                 width="70"
                 height="98"
                 rx="8"
-                fill="#f7f3e8"
+                fill="#fffdf6"
                 stroke="#000"
-                stroke-opacity="0.3"
+                stroke-opacity="0.35"
                 stroke-width="3"
               />
-              <g transform="translate(150 78) scale(1.9)" fill="#c8283c"><path d="M0-10 7 0 0 10-7 0Z" /></g>
+              <g transform="translate(150 66) scale(2.1)" fill="#1b1b1f">
+                <path
+                  d="M0-10C-14 0-10.5 8.5-3 5.2-3.2 8.2-4.2 10-6.4 10h12.8C4.2 10 3.2 8.2 3 5.2 10.5 8.5 14 0 0-10Z"
+                />
+              </g>
             </g>
-            <g transform="rotate(30 150 165)">
-              <rect
-                x="115"
-                y="22"
-                width="70"
-                height="98"
-                rx="8"
-                fill="#f6e7b0"
-                stroke="#000"
-                stroke-opacity="0.3"
-                stroke-width="3"
-              />
-              <path
-                transform="translate(150 72) scale(1.5)"
-                fill="#e0b43c"
-                stroke="#8a6a12"
-                stroke-width="1.6"
-                d="M0-18 5.3-6.2 18-5.6 8.2 2.6 11.2 15 0 8.4-11.2 15-8.2 2.6-18-5.6-5.3-6.2Z"
-              />
-            </g>
-            <rect
-              x="115"
-              y="14"
-              width="70"
-              height="98"
-              rx="8"
-              fill="#fffdf6"
-              stroke="#000"
-              stroke-opacity="0.35"
-              stroke-width="3"
-            />
-            <g transform="translate(150 66) scale(2.1)" fill="#1b1b1f">
-              <path
-                d="M0-10C-14 0-10.5 8.5-3 5.2-3.2 8.2-4.2 10-6.4 10h12.8C4.2 10 3.2 8.2 3 5.2 10.5 8.5 14 0 0-10Z"
-              />
-            </g>
-          </g>
-          <text
-            x="82"
-            y="37"
-            font-family="Georgia, 'Times New Roman', serif"
-            font-size="30"
-            font-weight="700"
-            letter-spacing="2"
-            fill="#f7f3e8"
-          >
-            BIG
-            <tspan fill="#e0b43c">TWO</tspan>
-          </text>
-          <text x="83" y="54" font-family="system-ui, sans-serif" font-size="11" letter-spacing="2.6" fill="#9fc3ad">
-            4 JOKERS WILD
-          </text>
-        </svg>
-        <span class="sr-only">Big Two, 4 jokers wild</span>
+            <text
+              x="82"
+              y="37"
+              font-family="Georgia, 'Times New Roman', serif"
+              font-size="30"
+              font-weight="700"
+              letter-spacing="2"
+              fill="#f7f3e8"
+            >
+              BIG
+              <tspan fill="#e0b43c">TWO</tspan>
+            </text>
+            <text x="83" y="54" font-family="system-ui, sans-serif" font-size="11" letter-spacing="2.6" fill="#9fc3ad">
+              4 JOKERS WILD
+            </text>
+          </svg>
+          <span class="sr-only">Big Two, 4 jokers wild</span>
+        </button>
       </h1>
       <span id="siteLabel" class="site-label" hidden></span>
       <div class="controls">
@@ -121,11 +123,11 @@
       <main class="table" id="tableMain" aria-label="Game table">
         <button
           type="button"
-          id="homeBtn"
-          class="ghost online-only table-home"
-          title="Back to the online home. Your seat is kept."
+          id="lobbyBtn"
+          class="ghost online-only table-lobby"
+          title="Back to the lobby. Your seat is kept."
         >
-          ‹ Online home
+          ‹ Lobby
         </button>
         <span id="soloChip" class="table-note solo-only" title="The settings of this game"></span>
         <section class="seat seat-north" id="seat-2"></section>

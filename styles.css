@@ -1852,8 +1852,8 @@ button.danger:hover:not(:disabled) {
   pointer-events: none;
 }
 
-/* Back to the online home: a button in the corner of the table, out of the row of game buttons. */
-.table-home {
+/* Back to the lobby: a button in the corner of the table, out of the row of game buttons. */
+.table-lobby {
   position: absolute;
   top: 10px;
   left: 14px;
@@ -1877,4 +1877,25 @@ button.attention::after {
   border-radius: 50%;
   background: #ff5a4f;
   vertical-align: middle;
+}
+
+/* The logo is a button (it goes to the lobby when you are online), drawn as plain artwork. */
+.brand-btn {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+
+.brand-btn:hover:not(:disabled) {
+  background: none;
+}
+
+body.online .brand-btn {
+  cursor: pointer;
 }

@@ -113,7 +113,7 @@ Opening an old database erases any phone numbers and text-message records it sti
 - An admin can **switch to the player view** (account menu) to see the game without the admin controls; it only hides
   them on this device, and the server still checks everything.
 - A started game **holds its seats until it finishes or an admin cancels it** (you can only leave on the result). There is no turn timer; the game waits
-  for anyone who is offline. "‹ Online home" (or the Online button) keeps your seat. The live game is saved to SQLite after every change, so
+  for anyone who is offline. "‹ Lobby" (or the Online button, or the logo) keeps your seat. The live game is saved to SQLite after every change, so
   it **survives a server restart**.
 - A cancelled game is recorded as cancelled and **never counts toward scoring**.
 - **Chat** is available while two or more people are at the table.
