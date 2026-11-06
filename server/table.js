@@ -48,7 +48,9 @@ export class Table {
     this.id = id;
     this.aiLevel = aiLevel;
     this.deps = deps;
-    this.seats = Array.from({ length: seatCount }, (_, i) => (host && i === 0 ? Table.human(host) : EMPTY));
+    this.seats = Array.from({ length: seatCount }, (_, i) =>
+      host && i === 0 ? Table.human(host, deps.cfg.now()) : EMPTY,
+    );
     this.hostId = host ? host.id : null;
     this.status = 'waiting'; // waiting | playing | done | closed
     this.game = null;
@@ -63,11 +65,15 @@ export class Table {
     this.autoTimer = null;
     this.autoKind = null; // 'start' (four seated) | 'next' (a game just ended)
     this.autoAt = null;
+    this.rotationOut = null; // who goes out when the next game starts (the lowest score of the game just played)
     this.notice = null; // why the table is waiting again after a game was stopped (shown to the people still seated)
+    this.seasonId = null; // the season whose players sit here (production tables)
+    this.watchers = new Map(); // people watching without a seat: userId -> name (not saved: they ask again)
   }
 
-  static human(user) {
-    return { kind: 'human', userId: user.id, name: user.name };
+  // `since` is when they sat down: it decides who has been seated longest.
+  static human(user, since = 0) {
+    return { kind: 'human', userId: user.id, name: user.name, since };
   }
 
   static restore(data, deps) {
@@ -82,7 +88,9 @@ export class Table {
       turnSince: data.turnSince ?? deps.cfg.now(), // games saved before this was recorded
       autoKind: data.autoKind ?? null,
       autoAt: data.autoAt ?? null,
+      rotationOut: data.rotationOut ?? null,
       notice: data.notice ?? null,
+      seasonId: data.seasonId ?? null,
       chat: data.chat || [],
       version: data.version + 1, // clients reconnecting after a restart must not ignore the first view
     });
@@ -102,7 +110,9 @@ export class Table {
       turnSince: this.turnSince,
       autoKind: this.autoKind,
       autoAt: this.autoAt,
+      rotationOut: this.rotationOut,
       notice: this.notice,
+      seasonId: this.seasonId,
       chat: this.chat,
       version: this.version,
     };
@@ -132,7 +142,7 @@ export class Table {
     if (this.seatOf(user.id) >= 0) return;
     const i = this.seats.findIndex((s) => s.kind === 'empty');
     if (i < 0) throw new TableError(409, 'That table is full.');
-    this.seats[i] = Table.human(user);
+    this.seats[i] = Table.human(user, this.deps.cfg.now());
     this.#autoCheck();
     this.#changed(true);
   }
@@ -141,14 +151,15 @@ export class Table {
   leave(userId) {
     const i = this.seatOf(userId);
     if (i < 0) return;
-    if (this.deps.auto && this.status !== 'waiting') {
-      // A seat is a promise to the other three. With only as many accounts as seats there is nobody to take it
-      // over, so it cannot be given up; with more, a seat can be left between games, or mid-game at a cost.
-      const players = this.deps.activeUsers();
+    if (this.deps.auto) {
+      // A seat is a promise to the other three. With only as many players in the season as seats there is nobody
+      // to take it over, so it cannot be given up; with more, a seat can be left before or between games, or
+      // mid-game at a cost, and the next player in line takes it.
+      const players = this.deps.seasonPlayers(this.seasonId);
       if (players <= this.seats.length) {
         throw new TableError(
           409,
-          `There are only ${players} players, so every seat stays filled: nobody can leave until there are more.`,
+          `There are only ${players} players in this season, so every seat stays filled: nobody can leave until there are more.`,
         );
       }
       if (this.status === 'playing') return this.#forfeit(i);
@@ -158,9 +169,20 @@ export class Table {
         'The game is in progress and holds your seat until it finishes or an admin cancels it.',
       );
     }
+    const leaverName = this.seats[i].name;
     this.seats[i] = EMPTY;
     if (this.deps.auto) {
-      // Nobody hosts a production table and an empty one just waits: leaving only frees the seat.
+      // Nobody hosts a production table: the next player in line takes the seat, and the leaver joins the back.
+      this.#fillSeats(userId);
+      if (this.status === 'done' && this.rotationOut !== null) {
+        // Leaving the results counts as the lowest score, so it is this game's one swap: the lowest scorer stays.
+        this.rotationOut = null;
+        const taker = this.seats[i];
+        this.result = {
+          ...this.result,
+          rotation: { out: leaverName, in: taker.kind === 'human' ? taker.name : null, why: 'left' },
+        };
+      }
       this.#autoCheck();
       return this.#changed(true);
     }
@@ -212,11 +234,12 @@ export class Table {
     this.#play(cards);
   }
 
-  // Chat is for people talking to each other, so it needs two or more humans.
+  // Chat is for people talking to each other, so it needs two or more people at the table (watchers count).
   say(userId, text) {
     const i = this.seatOf(userId);
-    if (i < 0) throw new TableError(403, 'You are not seated at this table.');
-    if (this.humans().length < 2) {
+    const watching = i < 0 && this.watchers.has(userId);
+    if (i < 0 && !watching) throw new TableError(403, 'You are not at this table: watch the game to join the chat.');
+    if (this.humans().length + this.watchers.size < 2) {
       throw new TableError(409, 'Chat is available when two or more people are at the table.');
     }
     if (typeof text !== 'string') throw new TableError(400, 'Message must be text.');
@@ -228,11 +251,24 @@ export class Table {
     if (!this.deps.chatLimit.allowed(key)) throw new TableError(429, 'You are sending messages too quickly.');
     this.deps.chatLimit.record(key);
     const last = this.chat.length ? this.chat[this.chat.length - 1].id : 0;
-    const msg = { id: last + 1, name: this.seats[i].name, text: clean, ts: this.deps.cfg.now() };
+    const name = i >= 0 ? this.seats[i].name : this.watchers.get(userId);
+    const msg = { id: last + 1, name, text: clean, ts: this.deps.cfg.now() };
     this.chat.push(msg);
     if (this.chat.length > KEEP_CHAT) this.chat.shift();
     this.deps.persist(this);
     this.deps.onChat(this, msg);
+  }
+
+  // Watching: anyone signed in who has no seat here can look at the game (the cards played, never anyone's hand)
+  // and chat. Watchers are only remembered while they are connected.
+  watch(user) {
+    if (this.status === 'closed') throw new TableError(409, 'That table is closed.');
+    if (this.seatOf(user.id) >= 0) throw new TableError(409, 'You are in this game: go back to it.');
+    this.watchers.set(user.id, user.name);
+  }
+
+  unwatch(userId) {
+    this.watchers.delete(userId);
   }
 
   // Admin only (checked by the caller). A game that had started is kept in
@@ -340,9 +376,39 @@ export class Table {
       return;
     }
     if (this.status !== 'done') return;
-    if (!this.deps.seasonRunning()) return this.close(); // the season is over: no next game
-    if (full) return this.#newRound();
+    if (!this.deps.seasonRunning(this.seasonId)) return this.close(); // the season is over: no next game
+    this.#rotate();
+    if (this.seats.every((s) => s.kind === 'human')) return this.#newRound();
     this.#toWaiting(); // someone left the results: wait for a replacement
+  }
+
+  // Rotation. With more people in the season than seats, whoever scored lowest in the game just played (the loser who
+  // paid the most) goes out: to the back of the line, with the next person in line taking the seat. Ties go to whoever has
+  // been seated longest, and if that ties too, one of them is picked at random. Leaving a game is scored as the
+  // lowest possible, so it ends the same way (see #forfeit). With only as many players as seats nobody rotates.
+  #pickLowest(delta) {
+    if (!this.deps.auto || this.seasonId === null) return null;
+    if (this.deps.seasonPlayers(this.seasonId) <= this.seats.length) return null;
+    const people = this.seats.map((s, i) => ({ s, i })).filter(({ s }) => s.kind === 'human');
+    if (!people.length) return null;
+    const lowest = Math.min(...people.map(({ i }) => delta[i]));
+    let tied = people.filter(({ i }) => delta[i] === lowest);
+    const longest = Math.min(...tied.map(({ s }) => s.since ?? 0));
+    tied = tied.filter(({ s }) => (s.since ?? 0) === longest);
+    const pick = tied.length === 1 ? tied[0] : tied[Math.floor(this.deps.cfg.rng() * tied.length)];
+    return pick.s.userId;
+  }
+
+  // The seat change itself, when the next game is about to start: the seat numbers stay as they were while
+  // the result is on screen. Skipped if that person has already left, or if the season no longer has spare people.
+  #rotate() {
+    const outId = this.rotationOut;
+    this.rotationOut = null;
+    if (outId === null) return;
+    const i = this.seatOf(outId);
+    if (i < 0 || this.deps.seasonPlayers(this.seasonId) <= this.seats.length) return;
+    this.seats[i] = EMPTY;
+    this.#fillSeats(outId);
   }
 
   // The next game, with the same four people.
@@ -375,10 +441,28 @@ export class Table {
     }
     this.notice = `${seat.name} left the game, so it was stopped. It does not count for anyone else.`;
     this.seats[i] = EMPTY;
+    this.#fillSeats(seat.userId);
     this.#toWaiting();
   }
 
+  // Production tables: an empty seat goes to the next player in the season's line. The person who just gave up a
+  // seat goes to the back of the line, and is never the one who takes it over.
+  #fillSeats(leaverId) {
+    if (!this.deps.auto || this.seasonId === null) return;
+    if (leaverId) this.deps.sitOut(this.seasonId, leaverId);
+    const taken = this.seats.filter((s) => s.kind === 'human').map((s) => s.userId);
+    if (leaverId) taken.push(leaverId);
+    this.seats = this.seats.map((s) => {
+      if (s.kind !== 'empty') return s;
+      const next = this.deps.nextReserve(this.seasonId, taken);
+      if (!next) return s;
+      taken.push(next.userId);
+      return Table.human({ id: next.userId, name: next.name }, this.deps.cfg.now());
+    });
+  }
+
   #toWaiting() {
+    this.rotationOut = null;
     this.game = null;
     this.result = null;
     this.status = 'waiting';
@@ -466,7 +550,19 @@ export class Table {
       saved = false;
       this.deps.log('Could not save game', err);
     }
-    this.result = { winner: r.winner, multiplier: r.multiplier, delta: r.delta, payments: r.payments, hasAi, saved };
+    this.rotationOut = this.#pickLowest(r.delta);
+    const out = this.rotationOut === null ? null : this.seats[this.seatOf(this.rotationOut)].name;
+    const taken = this.seats.filter((s) => s.kind === 'human').map((s) => s.userId);
+    const incoming = out === null ? null : this.deps.nextReserve(this.seasonId, taken);
+    this.result = {
+      winner: r.winner,
+      multiplier: r.multiplier,
+      delta: r.delta,
+      payments: r.payments,
+      hasAi,
+      saved,
+      rotation: out === null ? null : { out, in: incoming ? incoming.name : null, why: 'lowest' },
+    };
     this.#autoCheck();
     this.#changed(true);
   }
@@ -485,7 +581,8 @@ export class Table {
       aiLevel: this.aiLevel,
       version: this.version,
       you: me,
-      chatEnabled: this.humans().length >= 2,
+      spectator: false,
+      chatEnabled: this.humans().length + this.watchers.size >= 2,
       seats: this.seats.map((s, i) => ({
         kind: s.kind,
         name: s.name || null,
@@ -516,10 +613,44 @@ export class Table {
     };
   }
 
+  // What someone watching sees: the table as seat 0 would, minus every hand (so nothing but what has been played), and
+  // no way to move. `spectator` tells the screen to say whose seat is at the bottom instead of "You".
+  watchView(userId) {
+    const live = this.game && (this.status === 'playing' || this.status === 'done');
+    const g = this.game;
+    return {
+      id: this.id,
+      status: this.status,
+      host: this.hostName,
+      isHost: false,
+      aiLevel: this.aiLevel,
+      version: this.version,
+      you: 0,
+      spectator: true,
+      chatEnabled: this.humans().length + this.watchers.size >= 2,
+      seats: this.seats.map((s, i) => ({
+        kind: s.kind,
+        name: s.name || null,
+        level: s.level || null,
+        count: live ? g.hands[i].length : null,
+        online: s.kind === 'human' ? this.deps.isOnline(s.userId) : null,
+      })),
+      game: live ? { view: { ...observe(g, 0), hand: [] }, turn: g.turn, winner: g.winner, rules: null } : null,
+      result: this.result,
+      leave: null,
+      notice: this.notice,
+      next:
+        this.autoKind && this.autoAt
+          ? { kind: this.autoKind, at: this.autoAt, ms: Math.max(0, this.autoAt - this.deps.cfg.now()) }
+          : null,
+      hands: this.status === 'done' ? g.hands.map((h) => h.slice()) : null,
+      watching: this.watchers.has(userId),
+    };
+  }
+
   #leaveRule() {
-    if (this.status === 'waiting') return 'free';
     if (this.deps.auto) {
-      if (this.deps.activeUsers() <= this.seats.length) return null;
+      if (this.deps.seasonPlayers(this.seasonId) <= this.seats.length) return null;
       return this.status === 'playing' ? 'forfeit' : 'free';
     }
     return this.status === 'playing' ? null : 'free';
@@ -534,6 +665,7 @@ export class Table {
       seats: this.seats.length,
       players: this.humans().map((s) => s.name),
       humans: this.humans().length,
+      watching: this.watchers.size,
     };
   }
 }

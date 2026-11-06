@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { openDb, listUsers, recentAudit, stats } from '../server/db.js';
 import { makeAdmin, resetPassword } from '../server/admin.js';
 import { login } from '../server/auth.js';
-import { PASSWORD, boot, Client, makeUser } from './support.js';
+import { PASSWORD, boot, Client, makeUser, seasonPlayers } from './support.js';
 
 const NEW_PASSWORD = 'another-long-password';
 
@@ -156,15 +156,18 @@ test('overview, settings and audit endpoints', async () => {
     let o = (await admin.req('GET', '/api/admin/overview')).json;
     assert.equal(o.stats.users, 2);
     assert.equal(o.registrationOpen, false);
-    assert.equal(o.game.status, 'waiting', 'a season is running, so the table is open');
-    assert.equal(o.game.humans, 0);
+    assert.equal(o.game, null, 'a season needs four players before its table opens');
+    await seasonPlayers(ctx, ['play1', 'play2', 'play3', 'play4']);
+    o = (await admin.req('GET', '/api/admin/overview')).json;
+    assert.equal(o.game.status, 'waiting', 'a season with four players is running, so the table is open');
+    assert.equal(o.game.humans, 4, 'the first four players are seated');
     assert.equal((await admin.req('POST', '/api/admin/settings', { registrationOpen: 'yes' })).status, 400);
     await admin.req('POST', '/api/admin/settings', { registrationOpen: true });
     o = (await admin.req('GET', '/api/admin/overview')).json;
     assert.equal(o.registrationOpen, true);
     const before = ctx.app.lobby.table.id;
     assert.equal((await admin.req('POST', '/api/admin/game/cancel', {})).status, 200);
-    // Cancelling clears the table, and with a season running a fresh empty one opens straight away.
+    // Cancelling clears the table, and with a season running a fresh one (the same four seated) opens straight away.
     assert.notEqual(ctx.app.lobby.table.id, before);
     assert.equal((await admin.req('GET', '/api/admin/overview')).json.game.status, 'waiting');
     const entries = (await admin.req('GET', '/api/admin/audit?limit=5')).json.entries;

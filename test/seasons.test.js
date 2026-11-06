@@ -18,7 +18,7 @@ import {
   recentAudit,
 } from '../server/db.js';
 import { createUser } from '../server/auth.js';
-import { boot, makeUser } from './support.js';
+import { boot, makeUser, seasonPlayers } from './support.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 const DAY = 86400000;
@@ -239,6 +239,8 @@ test('API: seasons and leaderboards are public; only admins change seasons; ever
   try {
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
     const pleb = await makeUser(ctx, 'pleb');
+    // A season that runs or is to come needs at least four players picked from existing accounts.
+    const four = (await seasonPlayers(ctx, ['ann1', 'ann2', 'ann3', 'ann4'])).map((c) => c.user.id);
     const anon = (await import('./support.js')).Client;
     const guest = new anon(ctx.base);
     const day = 86400000;
@@ -262,11 +264,14 @@ test('API: seasons and leaderboards are public; only admins change seasons; ever
     assert.equal((await guest.req('POST', '/api/admin/seasons', body)).status, 401);
     assert.equal((await admin.req('POST', `/api/admin/seasons/${s1.id}`, body)).status, 200);
 
-    const next = { name: 'Spring', starts: now + 7 * day, ends: now + 30 * day };
+    const next = { name: 'Spring', starts: now + 7 * day, ends: now + 30 * day, members: four };
     const made = await admin.req('POST', '/api/admin/seasons', next);
     assert.equal(made.status, 201);
     assert.equal((await admin.req('POST', '/api/admin/seasons', { ...next, name: 'Clash' })).status, 409);
-    assert.equal((await admin.req('POST', '/api/admin/seasons', { name: '', starts: now, ends: null })).status, 400);
+    assert.equal(
+      (await admin.req('POST', '/api/admin/seasons', { name: '', starts: now, ends: null, members: four })).status,
+      400,
+    );
     assert.equal((await admin.req('POST', '/api/admin/seasons/9999', next)).status, 404);
 
     const after = (await guest.req('GET', '/api/seasons')).json.seasons;
@@ -345,6 +350,7 @@ test('API: an admin ends the running season at once; nobody else can; it is audi
   try {
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
     const pat = await makeUser(ctx, 'pat');
+    const four = (await seasonPlayers(ctx, ['quin1', 'quin2', 'quin3', 'quin4'])).map((c) => c.user.id);
     const list = (await admin.req('GET', '/api/seasons')).json.seasons;
     assert.equal(list.length, 1);
     const [season] = list;
@@ -364,7 +370,12 @@ test('API: an admin ends the running season at once; nobody else can; it is audi
     // With no season the boards and the seasons list still answer, and a new season can be made at once.
     assert.equal((await admin.req('GET', '/api/leaderboard')).status, 200);
     assert.equal((await admin.req('GET', '/api/stats')).status, 200);
-    const made = await admin.req('POST', '/api/admin/seasons', { name: 'Fresh', starts: Date.now(), ends: null });
+    const made = await admin.req('POST', '/api/admin/seasons', {
+      name: 'Fresh',
+      starts: Date.now(),
+      ends: null,
+      members: four,
+    });
     assert.equal(made.status, 201, JSON.stringify(made.json));
     assert.equal(ctx.app.lobby.table.status, 'waiting', 'a season running now opens the table at once');
   } finally {

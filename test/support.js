@@ -176,6 +176,24 @@ export function newDevice(db, userId, n = 0) {
   addSubscription(db, userId, new FakeDevice(n).subscription, { label: 'Test phone' });
 }
 
+// The people of a season, the way an admin sets them up: their accounts are made and signed in with an open event
+// stream, and the admin puts them on the roster of season `seasonId` (the one every new database starts with) one by
+// one, in the order given. The first four are seated; the fourth makes a running season ready, so its table opens.
+export async function seasonPlayers(ctx, names, { seasonId = 1 } = {}) {
+  ctx.admin ||= await makeUser(ctx, 'bossy', { isAdmin: true });
+  const people = [];
+  for (const n of names) people.push(await makeUser(ctx, n));
+  for (const c of people) {
+    c.ev = c.openEvents();
+    await c.ev.waitFor((m) => m.event === 'lobby');
+  }
+  for (const c of people) {
+    const r = await ctx.admin.req('POST', `/api/admin/seasons/${seasonId}/members`, { userId: c.user.id });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+  }
+  return people;
+}
+
 // Creates the account directly in the database and signs in through the API.
 export async function makeUser(ctx, name, { isAdmin = false } = {}) {
   await createUser(ctx.app.db, name, PASSWORD, { isAdmin });
@@ -202,6 +220,7 @@ const TOP = [
   'result',
   'next',
   'leave',
+  'spectator',
   'notice',
   'hands',
 ].sort();
