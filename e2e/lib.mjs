@@ -179,7 +179,7 @@ export class Page {
       `document.getElementById('name').value=${JSON.stringify(name)}; document.getElementById('pw').value=${JSON.stringify(password)}; document.getElementById('loginBtn').click()`,
     );
     await this.waitFor(
-      `document.getElementById('who').textContent===${JSON.stringify(name)} && !document.getElementById('lobbyHome').hidden && (document.body.dataset.online === 'ready' || document.body.classList.contains('solo'))`,
+      `document.getElementById('who').textContent===${JSON.stringify(name)} && !document.getElementById('lobbyHome').hidden && ['ready', 'solo'].includes(document.body.dataset.online)`,
       10000,
       `${name} in the lobby`,
     );
