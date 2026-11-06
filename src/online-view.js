@@ -23,7 +23,8 @@ export function mirrorState(t) {
   return {
     hands: seats.map((d) => {
       if (t.hands) return t.hands[at(d)].slice(); // round over: everything is shown
-      return d === 0 ? v.hand.slice() : new Array(v.counts[at(d)]).fill(-1);
+      // Only a seated player sees their own cards; a watcher sees every seat as a count, the bottom one included.
+      return d === 0 && !t.spectator ? v.hand.slice() : new Array(v.counts[at(d)]).fill(-1);
     }),
     turn: rot(t.game.turn, you, n),
     trick: rotTrick(v.trick, you, n),
@@ -51,10 +52,11 @@ export function newEvents(prevLen, t) {
 }
 
 // Display names by display seat; a person with no open connection is marked.
+// Someone watching has no seat: the bottom seat is a player like the others, so nobody is "You".
 export function seatNames(t) {
   const n = t.seats.length;
   return Array.from({ length: n }, (_, d) => {
-    if (d === 0) return 'You';
+    if (d === 0 && !t.spectator) return 'You';
     const s = t.seats[unrot(d, t.you, n)];
     return s.name + (s.online === false ? ' (offline)' : '');
   });

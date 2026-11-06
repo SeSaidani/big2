@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS seasons (
   ends INTEGER,
   CHECK (ends IS NULL OR ends > starts)
 );
+-- A season's players, in the order they were added (that order decides who is seated first and who is next in line).
+CREATE TABLE IF NOT EXISTS season_members (
+  season_id INTEGER NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (season_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS season_members_season ON season_members(season_id, position);
 -- One row per device that has turned turn alerts on (a browser's push subscription). The endpoint is the
 -- address of that device at its push service; p256dh and auth are the keys messages to it are encrypted with.
 CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -361,7 +369,8 @@ export function listSeasons(db, now = Date.now()) {
       .prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished' AND ended >= ? AND ended < ?")
       .get(s.starts, s.ends ?? FAR_FUTURE).n;
     const top = leaderboard(db, 'human', { season: s.id, now }).rows[0];
-    return { ...s, status, games, champion: top ? top.name : null };
+    const players = db.prepare('SELECT COUNT(*) AS n FROM season_members WHERE season_id = ?').get(s.id).n;
+    return { ...s, status, games, players, champion: top ? top.name : null };
   });
 }
 

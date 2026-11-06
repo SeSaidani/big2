@@ -155,6 +155,7 @@
               Back to lobby
             </button>
             <button type="button" id="forfeitBtn" class="ghost online-only" hidden>Leave seat</button>
+            <button type="button" id="watchStopBtn" class="ghost online-only" hidden>Stop watching</button>
           </div>
         </section>
       </main>
@@ -316,6 +317,7 @@
                 <th>Status</th>
                 <th>From</th>
                 <th>To</th>
+                <th>Players</th>
                 <th>Games</th>
                 <th>Champion</th>
                 <th>Actions</th>
@@ -336,6 +338,14 @@
               <label for="seasonEnd">Ends (optional)</label><input id="seasonEnd" type="datetime-local" />
             </div>
           </div>
+          <fieldset id="seasonPicksBox" class="picks">
+            <legend>Players</legend>
+            <p class="muted">
+              Tick at least 4 existing accounts for a season that is running or to come. The first four ticked sit down;
+              any others wait as reserves and take a seat when someone is rotated out or leaves.
+            </p>
+            <div id="seasonPicks" class="picks-list"></div>
+          </fieldset>
           <div class="row">
             <button type="button" id="seasonSave" class="primary">Create season</button>
             <button type="button" id="seasonCancel" class="ghost" hidden>Cancel edit</button>
@@ -399,6 +409,34 @@
         </div>
       </div>
     </div>
+
+    <dialog id="playersDlg">
+      <h2 id="playersTitle">Players</h2>
+      <p class="muted">
+        The first four sit at the table; the rest are reserves, in a line. Someone who is seated cannot be removed:
+        cancel the game first. A season that is running or to come keeps at least four players.
+      </p>
+      <table class="lb users">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Now</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="playersBody"></tbody>
+      </table>
+      <div class="row">
+        <label class="grow"
+          >Add a player
+          <select id="playersAdd"></select>
+        </label>
+        <button type="button" id="playersAddBtn" class="primary">Add</button>
+      </div>
+      <p id="playersMsg" class="muted"></p>
+      <div class="row"><button type="button" id="playersClose">Close</button></div>
+    </dialog>
 
     <dialog id="resetDlg">
       <h2>Set a temporary password</h2>
@@ -605,12 +643,16 @@
       <h3>Online</h3>
       <ul>
         <li>
-          While a season is running there is always a table. Take a seat: when all 4 seats are taken the game starts by
-          itself a few seconds later. There are no computer players online. For those, play Solo.
+          A season has players, picked by an admin from the accounts that exist. While it is running there is a table
+          with the first four of them seated, and the game starts by itself a few seconds after they are all there.
+          There are no computer players online. For those, play Solo. Nobody takes a seat by themselves.
         </li>
         <li>
-          When a game ends, the result stays up for half a minute and then the next game starts with the same people.
-          Press Leave table on the result if you want to stop; your seat is then open for someone else.
+          When a game ends, the result stays up for half a minute and then the next game starts. If the season has more
+          than four players, the one with the lowest score in that game (the loser who paid the most) goes out to the
+          back of the line and the next in line takes the seat. Leaving counts as the lowest score: leave the result and
+          you are the one who goes out; leave a game in progress and it costs the most a round can, and the game does
+          not count for the others. With exactly four players nobody rotates and nobody can leave.
         </li>
         <li>
           Nobody starts or creates games. An admin runs the season: ending it stops the game in progress (it is not
@@ -619,7 +661,10 @@
         <li>
           Leaving to the lobby keeps your seat. Nobody is timed out: if a player is away, the game waits for them.
         </li>
-        <li>Chat appears once two or more people are at the table.</li>
+        <li>
+          Anyone else can press <b>Watch the game</b>: you see what is played, never anyone's cards, and you can chat.
+          Chat appears once two or more people are at the table or watching.
+        </li>
         <li>
           Turn on alerts (under your name, then Turn alerts) and your phone buzzes if it has been your turn for 20
           minutes, and once more after 24 hours. On an iPhone, add the game to the Home Screen first.

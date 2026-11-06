@@ -54,6 +54,8 @@ export const api = {
   // The one game
   createGame: (aiLevel, seats) => call('POST', '/api/game', { aiLevel, seats }),
   join: () => call('POST', '/api/game/join'),
+  // Look at the game without a seat (you never see a hand); leave() stops watching too.
+  watch: () => call('POST', '/api/game/watch'),
   leave: () => call('POST', '/api/game/leave'),
   start: () => call('POST', '/api/game/start'),
   move: (cards) => call('POST', '/api/game/move', { cards }),
@@ -68,7 +70,12 @@ export const api = {
     setDisabled: (id, disabled) => call('POST', `/api/admin/users/${id}/status`, { disabled }),
     setAdmin: (id, isAdmin) => call('POST', `/api/admin/users/${id}/role`, { isAdmin }),
     setRegistration: (registrationOpen) => call('POST', '/api/admin/settings', { registrationOpen }),
-    createSeason: (name, starts, ends) => call('POST', '/api/admin/seasons', { name, starts, ends }),
+    // members: ids of existing accounts (at least 4 for a season that is running or to come)
+    createSeason: (name, starts, ends, members) => call('POST', '/api/admin/seasons', { name, starts, ends, members }),
+    // A season's players, in the order they sit (the first four are seated, the rest are reserves).
+    seasonPlayers: (id) => call('GET', `/api/admin/seasons/${id}/members`),
+    addSeasonPlayer: (id, userId) => call('POST', `/api/admin/seasons/${id}/members`, { userId }),
+    removeSeasonPlayer: (id, userId) => call('POST', `/api/admin/seasons/${id}/members/${userId}/remove`, {}),
     updateSeason: (id, name, starts, ends) => call('POST', `/api/admin/seasons/${id}`, { name, starts, ends }),
     deleteSeason: (id) => call('POST', `/api/admin/seasons/${id}/delete`, {}),
     endSeason: (id) => call('POST', `/api/admin/seasons/${id}/end`, {}),
