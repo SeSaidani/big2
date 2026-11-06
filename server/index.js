@@ -34,6 +34,16 @@ import {
 } from './db.js';
 import { luckAndSkill } from './stats.js';
 import { recordSolo, soloStats } from './solo.js';
+import {
+  MIN_PLAYERS,
+  addMember,
+  candidates,
+  memberCount,
+  removeMember,
+  seasonMembers,
+  setMembers,
+  validateMemberIds,
+} from './roster.js';
 import * as auth from './auth.js';
 import { Hub } from './hub.js';
 import { Lobby } from './lobby.js';
@@ -265,8 +275,8 @@ export function createApp(opts = {}) {
     hub.sendTo(res, 'lobby', lobby.summary());
     // Always say where this user stands (null = not seated), so a client that
     // reconnects after a restart or a cancelled game never keeps a stale table.
-    const t = lobby.tableOf(user.id);
-    hub.sendTo(res, 'table', t ? t.view(user.id) : null, t ? t.version : undefined);
+    const t = lobby.tableOf(user.id) || (lobby.table && lobby.table.watchers.has(user.id) ? lobby.table : null);
+    hub.sendTo(res, 'table', t ? lobby.viewFor(user) : null, t ? t.version : undefined);
     if (t) hub.sendTo(res, 'chathistory', t.chat);
     hub.add(user.id, res);
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);
@@ -282,8 +292,7 @@ export function createApp(opts = {}) {
   }
 
   const gameReply = (res, user, status = 200) => {
-    const t = lobby.tableOf(user.id);
-    sendJson(res, status, { table: t ? t.view(user.id) : null, ...lobby.summary() }, {});
+    sendJson(res, status, { table: lobby.viewFor(user), ...lobby.summary() }, {});
   };
 
   const getUserRow = (id) => {
@@ -361,10 +370,57 @@ export function createApp(opts = {}) {
     }
     if (p === '/api/admin/seasons' && m === 'POST') {
       const body = await readJson(req);
-      const season = createSeason(db, body);
-      audit(db, admin.id, 'create_season', season.name, seasonDetail(season));
+      // A season that is running or still to come needs at least four players, picked from existing accounts. One that
+      // is already over (a record of the past) may have any, or none.
+      const over = Number.isSafeInteger(body.ends) && body.ends <= cfg.now();
+      const ids = over
+        ? Array.isArray(body.members)
+          ? validateMemberIds(db, body.members, { min: 0 })
+          : []
+        : validateMemberIds(db, body.members);
+      db.exec('BEGIN IMMEDIATE');
+      let season;
+      try {
+        season = createSeason(db, body);
+        setMembers(db, season.id, ids);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      audit(db, admin.id, 'create_season', season.name, `${seasonDetail(season)}; ${ids.length} players`);
       lobby.reconcile(); // a season that is running now opens the table
       return sendJson(res, 201, { season });
+    }
+    const people = /^\/api\/admin\/seasons\/(\d+)\/members(?:\/(\d+)\/(remove))?$/.exec(p);
+    if (people) {
+      const id = parseId(people[1]);
+      if (!db.prepare('SELECT 1 FROM seasons WHERE id = ?').get(id)) throw new HttpError(404, 'No such season.');
+      const payload = () => ({
+        min: MIN_PLAYERS,
+        members: seasonMembers(db, id).map((x) => ({
+          ...x,
+          seated: !!lobby.table && lobby.table.seasonId === id && lobby.table.seatOf(x.userId) >= 0,
+        })),
+        candidates: candidates(db, id),
+      });
+      if (m === 'GET' && !people[2]) return sendJson(res, 200, payload());
+      if (m === 'POST' && !people[2]) {
+        const body = await readJson(req);
+        const who = addMember(db, id, body.userId, cfg.now());
+        audit(db, admin.id, 'add_season_player', who.name, `season ${id}`);
+        lobby.reconcile(); // the fourth player makes a running season ready: its table opens
+        return sendJson(res, 200, payload());
+      }
+      if (m === 'POST' && people[3] === 'remove') {
+        const userId = parseId(people[2]);
+        if (lobby.table && lobby.table.seasonId === id && lobby.table.seatOf(userId) >= 0) {
+          throw new HttpError(409, 'That player is seated at the table. Cancel the game first, then remove them.');
+        }
+        const who = removeMember(db, id, userId, cfg.now());
+        audit(db, admin.id, 'remove_season_player', who.name, `season ${id}`);
+        return sendJson(res, 200, payload());
+      }
     }
     const sea = /^\/api\/admin\/seasons\/(\d+)(\/delete|\/end)?$/.exec(p);
     if (sea && m === 'POST') {
@@ -389,6 +445,15 @@ export function createApp(opts = {}) {
         return sendJson(res, 200, { ok: true });
       }
       const body = await readJson(req);
+      if (!db.prepare('SELECT 1 FROM seasons WHERE id = ?').get(id)) throw new HttpError(404, 'No such season.');
+      // Moving a season so that it is running or to come is only allowed while it has enough players.
+      const over = Number.isSafeInteger(body.ends) && body.ends <= cfg.now();
+      if (!over && memberCount(db, id) < MIN_PLAYERS) {
+        throw new HttpError(
+          409,
+          `A season needs at least ${MIN_PLAYERS} players before it can run. Add players first.`,
+        );
+      }
       const season = updateSeason(db, id, body);
       audit(db, admin.id, 'update_season', season.name, seasonDetail(season));
       lobby.reconcile();
@@ -518,11 +583,12 @@ export function createApp(opts = {}) {
       lobby.create(user, body.aiLevel, body.seats);
       return gameReply(res, user, 201);
     }
-    const act = /^\/api\/game\/(join|leave|start|move|chat)$/.exec(p);
+    const act = /^\/api\/game\/(join|leave|start|move|chat|watch)$/.exec(p);
     if (act && m === 'POST') {
       const verb = act[1];
       if (verb === 'join') lobby.join(user);
       else if (verb === 'leave') lobby.leave(user);
+      else if (verb === 'watch') lobby.watch(user);
       else if (verb === 'start') lobby.start(user);
       else if (verb === 'move') {
         const body = await readJson(req);

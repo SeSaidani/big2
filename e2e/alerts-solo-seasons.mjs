@@ -5,6 +5,8 @@
 // Headless Chrome has no push service to subscribe to, so "Turn on alerts" is checked up to the browser's
 // own answer, and the delivery path is covered by the server tests, which decrypt what the server sends.
 import { launch, newPage, sleep, outDir } from './lib.mjs';
+import { openDb } from '../server/db.js';
+import { createUser } from '../server/auth.js';
 
 const OUT = outDir(process.argv[2]);
 const PORT = 8775;
@@ -44,6 +46,9 @@ const closeAlerts = () => A.ev(`${byId('alertsDlg')}.close()`);
 
 async function main() {
   console.log('CLI:', env.makeAdmin('boss', PW).stdout.trim());
+  const db = openDb(env.env.DB_FILE);
+  for (const name of ['bob', 'cat', 'dan']) await createUser(db, name, PW); // a new season needs four players to pick
+  db.close();
   await env.state.start();
   A = await newPage(CDP, 'A', OUT);
   await A.conn.send('Network.enable');
@@ -269,7 +274,9 @@ async function main() {
     await A.ev(`[...document.querySelectorAll('#seasonsBody button')].some((b) => b.textContent === 'End now')`),
   );
   // Before ending it, a new season clashes with it, and the message says what to do.
-  await A.ev(`${byId('seasonName')}.value = 'Autumn'; ${byId('seasonSave')}.click()`);
+  await A.ev(
+    `document.querySelectorAll('#seasonPicks input').forEach((i) => { if (!i.checked) i.click(); }); ${byId('seasonName')}.value = 'Autumn'; ${byId('seasonSave')}.click()`,
+  );
   await A.waitFor(`${byId('seasonMsg')}.textContent.includes('End now')`, 6000, 'the clash message');
   check('creating a season while one is running explains why not, and what to press', true, await A.text('seasonMsg'));
   await A.clickButton('#seasonsBody', 'End now'); // arms the button

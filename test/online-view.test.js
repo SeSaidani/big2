@@ -133,3 +133,25 @@ test('seat names are rotated; offline people are labelled; computers and absente
   assert.equal(isAway(t, 2), false); // bots are never "away"
   assert.equal(isAway(t, 3), false); // 'a' is online
 });
+
+test('someone watching has no seat: nobody at the table is called "You"', () => {
+  const seats = [
+    { kind: 'human', name: 'ann', online: true },
+    { kind: 'human', name: 'ben', online: false },
+    { kind: 'human', name: 'cat', online: true },
+    { kind: 'human', name: 'dan', online: true },
+  ];
+  assert.deepEqual(seatNames({ you: 0, spectator: true, seats }), ['ann', 'ben (offline)', 'cat', 'dan']);
+  assert.deepEqual(seatNames({ you: 0, seats }), ['You', 'ben (offline)', 'cat', 'dan']);
+});
+
+test('a watcher sees the bottom seat as a count of hidden cards, never a hand', () => {
+  const s = newGame(mulberry32(5));
+  const table = tableFor(s, 0);
+  table.spectator = true;
+  table.game.view = { ...table.game.view, hand: [] }; // what the server sends a watcher
+  const m = mirrorState(table);
+  for (let d = 0; d < 4; d++) {
+    assert.deepEqual(m.hands[d], new Array(14).fill(-1), `seat ${d}`);
+  }
+});

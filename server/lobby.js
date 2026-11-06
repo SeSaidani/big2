@@ -1,7 +1,9 @@
-// The server holds at most one table. In production nobody creates it: while a season is running there is
-// always a table, people sit down, four of them start a game, and when it ends the next one follows with the
-// same people. Ending the season stops the game and closes the table. A started game belongs to its seated
-// players until it finishes or an admin cancels it, and is saved after every change so it survives a restart.
+// The server holds at most one table. In production nobody creates it and nobody takes a seat: while a season is
+// running with at least four players there is always a table, the season's first four players are seated, four
+// seated start a game, and when it ends the next one follows with the same people. A player who leaves is replaced
+// by the next in line. Everyone else can watch (never anyone's hand) and chat. Ending the season stops the game and
+// closes the table. A started game belongs to its seated players until it finishes or an admin cancels it, and is
+// saved after every change so it survives a restart.
 // (With cfg.devTables an admin creates the table and starts the game by hand, with computer seats if wanted.)
 
 import crypto from 'node:crypto';
@@ -9,6 +11,7 @@ import { LEVELS } from '../src/ai/agents.js';
 import { PLAYER_COUNTS, NUM_PLAYERS } from '../src/cards.js';
 import { Table, TableError } from './table.js';
 import { saveLive, loadLive, clearLive, resolveSeason } from './db.js';
+import { MIN_PLAYERS, memberCount, firstPlayers, nextReserve, sitOut } from './roster.js';
 
 export class Lobby {
   // deps: { db, pool, hub, cfg, log, chatLimit }
@@ -18,17 +21,25 @@ export class Lobby {
     this.auto = !deps.cfg.devTables;
     this.clock = null;
     this.stopped = false;
+    const currentSeason = () => resolveSeason(deps.db, 'current', deps.cfg.now());
+    this.currentSeason = currentSeason;
     this.tableDeps = {
       ...deps,
       auto: this.auto,
-      seasonRunning: () => !!resolveSeason(deps.db, 'current', deps.cfg.now()),
-      // Accounts that could take a seat: leaving one is only possible when there are more of them than seats.
-      activeUsers: () => deps.db.prepare('SELECT COUNT(*) AS n FROM users WHERE disabled = 0').get().n,
+      // Is the season this table belongs to still the one running?
+      seasonRunning: (seasonId) => {
+        const s = currentSeason();
+        return !!s && (seasonId === null || s.id === seasonId);
+      },
+      seasonPlayers: (seasonId) => (seasonId === null ? 0 : memberCount(deps.db, seasonId)),
+      nextReserve: (seasonId, seatedIds) => nextReserve(deps.db, seasonId, seatedIds),
+      sitOut: (seasonId, userId) => sitOut(deps.db, seasonId, userId),
       isOnline: (userId) => deps.hub.conns.has(userId),
       persist: (t) => this.#persist(t),
       onView: (t) => this.#pushViews(t),
       onChat: (t, msg) => {
         for (const s of t.humans()) deps.hub.send(s.userId, 'chat', msg);
+        for (const id of t.watchers.keys()) deps.hub.send(id, 'chat', msg);
       },
       onList: () => deps.hub.broadcast('lobby', this.summary()),
       onClose: (t) => this.#drop(t),
@@ -45,13 +56,19 @@ export class Lobby {
     this.reconcile();
   }
 
-  // Keeps the table in step with the seasons: a running season has a table, and with none running a table
-  // nobody has started closes. (A game in progress is left to finish; the table closes when it is over.)
+  // Keeps the table in step with the seasons: a running season with enough players has a table, seated with its
+  // first four; with none running (or too few players) a table nobody has started closes. A game in progress is
+  // left to finish, and the table closes when it is over.
   reconcile() {
     if (!this.auto || this.stopped) return;
-    const running = this.tableDeps.seasonRunning();
-    if (running && !this.table) this.#openTable();
-    else if (!running && this.table && this.table.status === 'waiting') this.table.close();
+    const season = this.currentSeason();
+    const ready = !!season && memberCount(this.deps.db, season.id) >= MIN_PLAYERS;
+    if (!ready) {
+      if (this.table && this.table.status === 'waiting') this.table.close();
+      return;
+    }
+    if (!this.table) this.#openTable(season);
+    else if (this.table.seasonId !== season.id && this.table.status === 'waiting') this.table.close(); // reopens below
   }
 
   // The clock that notices a season starting or ending by its dates.
@@ -77,8 +94,27 @@ export class Lobby {
     return this.table && this.table.seatOf(userId) >= 0 ? this.table : null;
   }
 
+  // What this user is shown of the table: their own view if they sit at it, the watcher's view if they are watching.
+  viewFor(user) {
+    const t = this.tableOf(user.id);
+    if (t) return t.view(user.id);
+    if (this.table && this.table.watchers.has(user.id)) return this.table.watchView(user.id);
+    return null;
+  }
+
   summary() {
-    return { game: this.table ? this.table.summary() : null };
+    return { game: this.table ? this.table.summary() : null, season: this.#seasonNote() };
+  }
+
+  // Why there is (or is not) a table, for the lobby to say: no season, or a season that needs more players.
+  #seasonNote() {
+    if (!this.auto) return null;
+    const season = this.currentSeason();
+    if (!season) return { state: 'none' };
+    const players = memberCount(this.deps.db, season.id);
+    return players >= MIN_PLAYERS
+      ? { state: 'running', name: season.name, players }
+      : { state: 'needs-players', name: season.name, players, needed: MIN_PLAYERS };
   }
 
   // An online game is a season game: four people, no computer players, created by an admin while a season is
@@ -113,12 +149,22 @@ export class Lobby {
   }
 
   join(user) {
+    if (this.auto) throw new TableError(409, "Seats go to the season's players: you cannot take one. You can watch.");
     this.#require().join(user);
     return this.table;
   }
 
   leave(user) {
-    this.#require().leave(user.id);
+    const t = this.#require();
+    if (t.watchers.has(user.id)) return t.unwatch(user.id); // stopping watching
+    t.leave(user.id);
+  }
+
+  // Look at the game without a seat. Seated players are sent back to their own view instead.
+  watch(user) {
+    this.#require().watch(user);
+    this.deps.hub.broadcast('lobby', this.summary());
+    return this.table;
   }
 
   start(user) {
@@ -141,7 +187,11 @@ export class Lobby {
   // A user's first connection opened or last one closed.
   presence(userId) {
     const t = this.tableOf(userId);
-    if (t) t.touch();
+    if (t) return t.touch();
+    // Someone who was watching and has gone away is not watching any more.
+    if (this.table && this.table.watchers.has(userId) && !this.deps.hub.conns.has(userId)) {
+      this.table.unwatch(userId);
+    }
   }
 
   // Process is stopping: halt timers but keep the saved game for the next start.
@@ -156,11 +206,18 @@ export class Lobby {
     return this.table;
   }
 
-  #openTable() {
+  // A table for the season, with its first four players already in their seats.
+  #openTable(season) {
     const t = new Table(crypto.randomBytes(4).toString('hex'), null, 'medium', this.tableDeps, NUM_PLAYERS);
+    t.seasonId = season.id;
+    firstPlayers(this.deps.db, season.id, NUM_PLAYERS).forEach((m, i) => {
+      t.seats[i] = Table.human({ id: m.userId, name: m.name }, this.deps.cfg.now());
+    });
     this.table = t;
+    t.resume(); // all four are seated: the countdown to the first game starts
     this.#persist(t);
     this.deps.hub.broadcast('lobby', this.summary());
+    this.#pushViews(t);
   }
 
   #persist(t) {
@@ -173,6 +230,7 @@ export class Lobby {
 
   #pushViews(t) {
     for (const s of t.humans()) this.deps.hub.send(s.userId, 'table', t.view(s.userId), t.version);
+    for (const id of t.watchers.keys()) this.deps.hub.send(id, 'table', t.watchView(id), t.version);
   }
 
   #drop(t) {
@@ -180,7 +238,8 @@ export class Lobby {
     this.table = null;
     clearLive(this.deps.db);
     for (const s of t.humans()) this.deps.hub.send(s.userId, 'table', null);
+    for (const id of t.watchers.keys()) this.deps.hub.send(id, 'table', null);
     this.deps.hub.broadcast('lobby', this.summary());
-    this.reconcile(); // a season still running means a fresh table, with the seats empty
+    this.reconcile(); // a season still running means a fresh table, seated with its first four players
   }
 }

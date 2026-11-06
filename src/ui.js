@@ -58,6 +58,10 @@ let sending = false; // a move is in flight
 let trickReset = null;
 let eventSource = null;
 let lobbyGame = null; // summary of the one game, or null
+let lobbySeason; // why there is or is not a table ({ state: 'none' | 'needs-players' | 'running', ... }); undefined until the server has said
+let seasonUsers = []; // accounts an admin can put in a new season
+const pickedIds = new Set(); // ...and the ones ticked so far, in the order they were ticked
+let playersSeason = null; // the season whose players the dialog shows
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
@@ -205,13 +209,16 @@ function renderCenter() {
   }
 }
 
-const myTurn = () => !!game && game.winner < 0 && game.turn === 0 && !busy && !sending;
+// Someone watching has no seat and no hand; the bottom seat is a player like the rest.
+const watching = () => !!table && !!table.spectator;
+const isMe = (p) => p === 0 && !watching();
+const myTurn = () => !!game && game.winner < 0 && game.turn === 0 && !busy && !sending && !watching();
 
 function renderHand() {
   const handEl = $('hand');
   handEl.innerHTML = '';
   handEl.classList.toggle('disabled', !myTurn());
-  const cards = sortMode === 'rank' ? sortByRank(game.hands[0]) : sortBySuit(game.hands[0]);
+  const cards = watching() ? [] : sortMode === 'rank' ? sortByRank(game.hands[0]) : sortBySuit(game.hands[0]);
   const deg = PHONE.matches ? 2.3 : 3; // a gentler curve keeps 14 cards inside a phone's width
   cards.forEach((c, i) => {
     const el = fanStyle(cardEl(c), i, cards.length, deg);
@@ -223,11 +230,12 @@ function renderHand() {
   const fan = $('playedFan');
   me.innerHTML = '';
   fan.innerHTML = '';
-  if (seatActions[0] === 'pass') me.textContent = 'You passed';
-  else if (seatActions[0] === 'leadpass') me.textContent = 'You passed the lead';
-  else if (seatActions[0] === 'cantbeat') me.textContent = "You can't beat it";
+  const who = watching() ? NAMES[0] : 'You';
+  if (seatActions[0] === 'pass') me.textContent = `${who} passed`;
+  else if (seatActions[0] === 'leadpass') me.textContent = `${who} passed the lead`;
+  else if (seatActions[0] === 'cantbeat') me.textContent = `${who} can't beat it`;
   else if (seatActions[0]) {
-    me.textContent = 'You played';
+    me.textContent = `${who} played`;
     fan.appendChild(fanRow(seatActions[0].cards));
   }
   document.querySelector('.me').classList.toggle('active', game.turn === 0 && game.winner < 0);
@@ -311,6 +319,12 @@ for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
 
 function renderSelection() {
   const info = $('selInfo');
+  if (watching()) {
+    const n = game.hands[0].length;
+    info.textContent = `${NAMES[0]} has ${n} card${n === 1 ? '' : 's'}`;
+    for (const id of ['playBtn', 'passBtn', 'clearBtn']) $(id).disabled = true;
+    return;
+  }
   const cards = [...selected];
   let canPlay = false;
   if (!cards.length) {
@@ -330,6 +344,7 @@ function renderSelection() {
 }
 
 function render() {
+  $('tableMain').classList.toggle('spectating', watching());
   const n = game.hands.length;
   $('seat-2').hidden = n === 3; // the North seat is empty at a table of three
   for (let p = 1; p < n; p++) renderSeat(p);
@@ -679,8 +694,9 @@ function openStream() {
     onOpen: () => {
       acceptAny = true;
     },
-    onLobby: ({ game }) => {
+    onLobby: ({ game, season }) => {
       lobbyGame = game;
+      lobbySeason = season ?? null;
       route();
     },
     onTable,
@@ -781,7 +797,13 @@ function renderLeaveButtons() {
   const forfeit = !!table && table.status === 'playing' && rule === 'forfeit';
   show('forfeitBtn', forfeit);
   if (!forfeit) resetForfeitBtn();
-  if (!devTables) show('endLeave', !!table && table.status === 'done' && rule === 'free');
+  const spec = watching();
+  show('watchStopBtn', spec);
+  $('waitLeave').textContent = spec ? 'Stop watching' : 'Leave table';
+  if (!devTables) {
+    show('endLeave', spec || (!!table && table.status === 'done' && rule === 'free'));
+    $('endLeave').textContent = spec ? 'Stop watching' : 'Leave table';
+  }
 }
 
 async function forfeitSeat() {
@@ -794,6 +816,7 @@ async function forfeitSeat() {
   try {
     const r = await api.leave();
     if (r.game !== undefined) lobbyGame = r.game;
+    if (r.season !== undefined) lobbySeason = r.season;
     onTable(r.table);
   } catch (err) {
     setStatus(err.message);
@@ -822,6 +845,20 @@ function route() {
   renderChat();
 }
 
+// Why there is no table (production): no season, or a season that is short of players.
+function noTableNote() {
+  const s = lobbySeason;
+  if (s && s.state === 'needs-players') {
+    const base = `${s.name} is running but has ${s.players} of the ${s.needed} players it needs, so there is no table yet.`;
+    return adminUi()
+      ? `${base} Add ${s.needed - s.players} more under Admin, then Seasons, then Players.`
+      : `${base} An admin adds the players.`;
+  }
+  return adminUi()
+    ? 'No season is running, so there is no table. Create a season under Admin, then Seasons, and pick its players.'
+    : 'There is no table right now: games run while a season is running.';
+}
+
 function renderLobbyHome() {
   const box = $('gameBox');
   box.innerHTML = '';
@@ -832,18 +869,20 @@ function renderLobbyHome() {
     if (cls) p.className = cls;
     box.appendChild(p);
   };
+  const button = (label, onClick, primary = true) => {
+    const b = document.createElement('button');
+    b.className = primary ? 'primary' : 'ghost';
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  };
   // Only with the development rules does an admin create games by hand; otherwise the table runs itself.
   show('createRow', devTables && adminUi() && (!g || g.status === 'done'));
   if (!g) {
     if (devTables) {
       if (!adminUi()) line('No game is running. An admin starts the games.', 'muted');
-    } else {
-      line(
-        adminUi()
-          ? 'No season is running, so there is no table. Create a season under Admin, then Seasons.'
-          : 'There is no table right now: games run while a season is running.',
-        'muted',
-      );
+    } else if (lobbySeason !== undefined) {
+      line(noTableNote(), 'muted'); // (not before the server has said why: that would flash the wrong reason)
     }
     return;
   }
@@ -863,6 +902,7 @@ function renderLobbyHome() {
     ['Status', state],
     ['Table', `${g.seats} seats`],
     ['Players', `${g.players.length ? g.players.join(', ') : 'nobody yet'} (${g.humans} of ${g.seats})`],
+    ...(!devTables && g.watching ? [['Watching', String(g.watching)]] : []),
     ...(devTables
       ? [
           [
@@ -883,28 +923,25 @@ function renderLobbyHome() {
   box.appendChild(facts);
   const row = document.createElement('div');
   row.className = 'row';
-  if (table) {
-    const b = document.createElement('button');
-    b.className = 'primary';
-    b.textContent = g.status === 'done' ? 'See the result' : 'Rejoin your game';
-    b.addEventListener('click', () => {
-      viewingLobby = false;
-      route();
-    });
-    row.appendChild(b);
-  } else if (g.status === 'waiting') {
-    const b = document.createElement('button');
-    b.className = 'primary';
-    b.textContent = devTables ? 'Join game' : 'Take a seat';
-    b.addEventListener('click', joinGame);
-    row.appendChild(b);
-  } else {
+  const backToTable = () => {
+    viewingLobby = false;
+    route();
+  };
+  if (table && !table.spectator) {
+    row.appendChild(button(g.status === 'done' ? 'See the result' : 'Rejoin your game', backToTable));
+  } else if (table) {
+    row.appendChild(button('Back to the table', backToTable));
+    row.appendChild(button('Stop watching', leaveTable, false));
+  } else if (devTables && g.status === 'waiting') {
+    row.appendChild(button('Join game', joinGame));
+  } else if (!devTables) {
+    row.appendChild(button('Watch the game', watchGame));
     line(
-      devTables
-        ? 'This game is already running, so it cannot be joined. Watch for the next one.'
-        : 'A game is in progress. When it ends the seats open up, or take one as soon as someone leaves.',
+      "Seats belong to the season's players, picked by an admin. You can watch, see what is played (never anyone's cards) and chat.",
       'muted',
     );
+  } else {
+    line('This game is already running, so it cannot be joined. Watch for the next one.', 'muted');
   }
   box.appendChild(row);
 }
@@ -922,7 +959,7 @@ function renderWaitRoom(t) {
     const empty = s.kind === 'empty';
     li.textContent = empty
       ? `Seat ${i + 1}: ${devTables ? `empty (${t.aiLevel} AI will play)` : 'waiting for a player'}`
-      : `Seat ${i + 1}: ${s.name}${i === t.you ? ' (you)' : ''}`;
+      : `Seat ${i + 1}: ${s.name}${i === t.you && !t.spectator ? ' (you)' : ''}`;
     if (empty) li.className = 'muted';
     ul.appendChild(li);
   });
@@ -963,10 +1000,10 @@ async function refreshSeasons() {
     sel.appendChild(o);
   };
   const current = list.find((s) => s.status === 'active');
-  add('current', current ? `Current season (${current.name})` : 'Current season (none right now)');
+  if (current) add('current', `Current season (${current.name})`);
   for (const s of list) add(String(s.id), `${s.name}${s.status === 'upcoming' ? ' (upcoming)' : ''}`);
   add('all', 'All-time');
-  if (![...sel.options].some((o) => o.value === lbSeason)) lbSeason = 'current';
+  if (![...sel.options].some((o) => o.value === lbSeason)) lbSeason = current ? 'current' : 'all';
   sel.value = lbSeason;
 }
 
@@ -1083,6 +1120,7 @@ async function gameAction(fn, msgId) {
   try {
     const r = await fn();
     if (r.game !== undefined) lobbyGame = r.game;
+    if (r.season !== undefined) lobbySeason = r.season;
     onTable(r.table);
   } catch (err) {
     $(msgId).textContent = err.message;
@@ -1090,6 +1128,7 @@ async function gameAction(fn, msgId) {
 }
 
 const joinGame = () => gameAction(() => api.join(), 'lobbyMsg');
+const watchGame = () => gameAction(() => api.watch(), 'lobbyMsg');
 const startOnlineRound = () => gameAction(() => api.start(), table && table.status === 'done' ? 'endNote' : 'waitMsg');
 const leaveTable = () => gameAction(() => api.leave(), table && table.status === 'done' ? 'endNote' : 'waitMsg');
 const backToLobby = () => {
@@ -1149,7 +1188,7 @@ function onTable(t) {
   const replay = fresh && events.length > 1; // joining mid-game: log it, don't animate it
   if (fresh && !replay) {
     log(
-      `New round. ${NAMES[game.turn]} ${game.turn === 0 ? 'have' : 'has'} the 3♦ and ${game.turn === 0 ? 'lead' : 'leads'}.`,
+      `New round. ${NAMES[game.turn]} ${isMe(game.turn) ? 'have' : 'has'} the 3♦ and ${isMe(game.turn) ? 'lead' : 'leads'}.`,
       'sys',
     );
   }
@@ -1159,7 +1198,7 @@ function onTable(t) {
   if (game.winner >= 0) {
     endOnlineRound(t, !!prev && prev.status === 'done' && prev.id === t.id);
   } else if (!closed) {
-    if (game.turn === 0) setStatus(myTurnMessage());
+    if (isMe(game.turn)) setStatus(myTurnMessage());
     else if (isComputer(t, game.turn)) setStatus(`${NAMES[game.turn]} is thinking…`);
     else if (isAway(t, game.turn)) setStatus(`Waiting for ${NAMES[game.turn]}; the game holds until they return.`);
     else setStatus(`${NAMES[game.turn]} to play`);
@@ -1199,10 +1238,10 @@ function applyEvents(events, replay) {
 
   let msg;
   if (skipped && lastPlay) {
-    const whose = lastPlay.p === 0 ? 'your' : `${NAMES[lastPlay.p]}'s`;
-    msg = `Nobody can beat ${whose} ${describe(lastPlay.cls)}. ${lastPlay.p === 0 ? 'You lead' : `${NAMES[lastPlay.p]} leads`} again.`;
+    const whose = isMe(lastPlay.p) ? 'your' : `${NAMES[lastPlay.p]}'s`;
+    msg = `Nobody can beat ${whose} ${describe(lastPlay.cls)}. ${isMe(lastPlay.p) ? 'You lead' : `${NAMES[lastPlay.p]} leads`} again.`;
   } else {
-    msg = `${game.turn === 0 ? 'You win' : `${NAMES[game.turn]} wins`} the trick.`;
+    msg = `${isMe(game.turn) ? 'You win' : `${NAMES[game.turn]} wins`} the trick.`;
   }
   setStatus(msg);
   log(msg, 'sys');
@@ -1210,7 +1249,7 @@ function applyEvents(events, replay) {
     trickReset = null;
     clearTrickDisplay();
     render();
-    if (game.winner < 0) setStatus(game.turn === 0 ? myTurnMessage() : '');
+    if (game.winner < 0) setStatus(isMe(game.turn) ? myTurnMessage() : '');
   }, TRICK_PAUSE_MS);
   return true;
 }
@@ -1219,8 +1258,8 @@ function endOnlineRound(t, alreadyShown) {
   const w = game.winner;
   const r = t.result;
   setStatus('');
-  if (!alreadyShown) log(w === 0 ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
-  $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
+  if (!alreadyShown) log(isMe(w) ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
+  $('endTitle').textContent = isMe(w) ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
   box.innerHTML = '';
   for (let p = 0; p < game.hands.length; p++) {
@@ -1242,6 +1281,18 @@ function endOnlineRound(t, alreadyShown) {
   if (r && r.multiplier > 1) notes.push('Going out with a straight flush or five of a kind doubles every payment.');
   if (r && !r.saved) notes.push('This result could not be saved to the leaderboard.');
   else if (r && r.hasAi) notes.push('This game had computer players, so it is not on the leaderboard.');
+  if (r && r.rotation) {
+    const { out, in: taker, why } = r.rotation;
+    const you = !t.spectator && out === t.seats[t.you]?.name;
+    const who = you ? 'You' : out;
+    const goes = you ? 'go' : 'goes';
+    const gone = why === 'left' ? `${who} left` : `${who} scored lowest`;
+    notes.push(
+      taker
+        ? `${gone}, so ${taker} takes that seat for the next game and ${who} ${goes} to the back of the line.`
+        : `${gone} and ${goes} to the back of the line.`,
+    );
+  }
   if (devTables && !t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
   if (!devTables && t.leave === null) {
     notes.push('There are only as many players as seats, so every seat stays filled.');
@@ -1371,10 +1422,15 @@ function renderSeasons(list) {
     cell(s.status);
     cell(fmtDateTime(s.starts));
     cell(s.ends === null ? 'open-ended' : fmtDateTime(s.ends));
+    cell(s.players ?? 0);
     cell(s.games);
     cell(s.champion || '-');
     const actions = document.createElement('td');
     actions.className = 'actions-cell';
+    const people = document.createElement('button');
+    people.textContent = 'Players';
+    people.addEventListener('click', () => openPlayers(s));
+    actions.append(people);
     const edit = document.createElement('button');
     edit.textContent = 'Edit';
     edit.addEventListener('click', () => startSeasonEdit(s));
@@ -1394,6 +1450,7 @@ function startSeasonEdit(s) {
   $('seasonStart').value = toLocalInput(s.starts);
   $('seasonEnd').value = s.ends === null ? '' : toLocalInput(s.ends);
   $('seasonSave').textContent = 'Save changes';
+  show('seasonPicksBox', false); // an existing season's players are managed with its Players button
   show('seasonCancel', true);
   $('seasonMsg').textContent = '';
 }
@@ -1406,6 +1463,99 @@ function resetSeasonForm() {
   $('seasonEnd').value = '';
   $('seasonSave').textContent = 'Create season';
   show('seasonCancel', false);
+  show('seasonPicksBox', true);
+  pickedIds.clear();
+  renderPicks();
+}
+
+// The accounts an admin can put in a new season, as tick boxes. The order they are ticked is the order they sit.
+function renderPicks() {
+  const box = $('seasonPicks');
+  box.innerHTML = '';
+  for (const u of seasonUsers) {
+    const label = document.createElement('label');
+    label.className = 'check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = pickedIds.has(u.id);
+    cb.addEventListener('change', () => {
+      if (cb.checked) pickedIds.add(u.id);
+      else pickedIds.delete(u.id);
+    });
+    label.append(cb, document.createTextNode(` ${u.name}`));
+    box.appendChild(label);
+  }
+}
+
+// ---- a season's players (admin): who sits, who waits, add and remove
+async function openPlayers(season) {
+  playersSeason = season;
+  $('playersTitle').textContent = `${season.name}: players`;
+  $('playersMsg').textContent = '';
+  await playersDo(() => api.admin.seasonPlayers(season.id));
+  $('playersDlg').showModal();
+}
+
+async function playersDo(fn) {
+  $('playersMsg').className = 'muted';
+  try {
+    renderPlayers(await fn());
+  } catch (err) {
+    $('playersMsg').className = 'bad';
+    $('playersMsg').textContent = err.message;
+    return;
+  }
+  await refreshAdmin(); // the players column
+}
+
+function renderPlayers(p) {
+  const body = $('playersBody');
+  body.innerHTML = '';
+  const anySeated = p.members.some((m) => m.seated);
+  let reserve = 0;
+  p.members.forEach((m, i) => {
+    const tr = document.createElement('tr');
+    const cell = (text) => {
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.appendChild(td);
+      return td;
+    };
+    cell(String(i + 1));
+    cell(m.name);
+    const sits = anySeated ? m.seated : i < p.min;
+    cell(sits ? (m.seated ? 'Seated' : 'Will sit down') : `Reserve ${++reserve}`);
+    const actions = document.createElement('td');
+    actions.className = 'actions-cell';
+    if (m.seated) {
+      const b = document.createElement('button');
+      b.textContent = 'Remove';
+      b.disabled = true;
+      b.title = 'Seated: cancel the game first';
+      actions.append(b);
+    } else {
+      actions.append(
+        armedButton('Remove', () => playersDo(() => api.admin.removeSeasonPlayer(playersSeason.id, m.userId))),
+      );
+    }
+    tr.appendChild(actions);
+    body.appendChild(tr);
+  });
+  const sel = $('playersAdd');
+  sel.innerHTML = '';
+  for (const c of p.candidates) {
+    const o = document.createElement('option');
+    o.value = String(c.id);
+    o.textContent = c.name;
+    sel.appendChild(o);
+  }
+  if (!p.candidates.length) {
+    const o = document.createElement('option');
+    o.textContent = 'Every account is already a player';
+    sel.appendChild(o);
+  }
+  sel.disabled = !p.candidates.length;
+  $('playersAddBtn').disabled = !p.candidates.length;
 }
 
 async function seasonDo(fn) {
@@ -1440,8 +1590,18 @@ async function saveSeason() {
     return;
   }
   const editing = editingSeason;
+  const members = [...pickedIds];
+  const over = ends !== null && ends <= Date.now();
+  if (!editing && !over && members.length < 4) {
+    $('seasonMsg').className = 'bad';
+    $('seasonMsg').textContent =
+      `A season that is running or to come needs at least 4 players: ${members.length} ticked.`;
+    return;
+  }
   const ok = await seasonDo(() =>
-    editing ? api.admin.updateSeason(editing.id, name, starts, ends) : api.admin.createSeason(name, starts, ends),
+    editing
+      ? api.admin.updateSeason(editing.id, name, starts, ends)
+      : api.admin.createSeason(name, starts, ends, members),
   );
   if (ok) {
     resetSeasonForm();
@@ -1450,6 +1610,8 @@ async function saveSeason() {
 }
 
 function renderAdmin(o, users, entries) {
+  seasonUsers = users.filter((u) => !u.disabled);
+  renderPicks();
   $('adminStats').textContent =
     `${o.stats.users} accounts · ${o.stats.gamesFinished} finished games · ${o.stats.gamesCancelled} cancelled · ${o.online} connected now`;
   $('regState').textContent = o.registrationOpen
@@ -1933,6 +2095,12 @@ $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
 $('leaveBtn').addEventListener('click', backToLobby);
 $('forfeitBtn').addEventListener('click', forfeitSeat);
+$('watchStopBtn').addEventListener('click', leaveTable);
+$('playersAddBtn').addEventListener('click', () => {
+  const id = Number($('playersAdd').value);
+  if (id) playersDo(() => api.admin.addSeasonPlayer(playersSeason.id, id));
+});
+$('playersClose').addEventListener('click', () => $('playersDlg').close());
 $('endLeave').addEventListener('click', leaveTable);
 $('chatSend').addEventListener('click', sendChat);
 $('chatInput').addEventListener('keydown', (e) => e.key === 'Enter' && sendChat());
