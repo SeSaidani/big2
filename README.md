@@ -87,17 +87,29 @@ Opening an old database erases any phone numbers and text-message records it sti
 
 ## How online games work
 
-- **The table runs itself.** While a season is running there is always one table with four seats and nobody creates or
-  starts a game. People take a seat; when all four are taken (people only, no computer players) the game starts after
-  a 10 second countdown (`TABLE_START_DELAY_MS`). When it ends the result stays up for 30 seconds
-  (`TABLE_NEXT_GAME_DELAY_MS`) and the next game starts with the same four. Someone who presses **Leave table** on the
-  result frees their seat, and the table waits for a replacement. A season that ends **by its dates** lets the game in
-  progress finish and then closes the table (the game counts in no season, as before); an admin's **End now** stops the
-  game in progress (recorded as cancelled, never scored) and closes the table. **Cancel game** clears the table and,
-  with a season running, a fresh empty one opens. A season that starts by its dates opens the table (a clock checks
-  every few seconds). The countdown shows on screen and carries on after a server restart.
+- **A season has players, and the table runs itself.** An admin makes a season and ticks its players from the accounts
+  that exist (at least four for a season that is running or to come), or adds and removes them later with the season's
+  **Players** button. While a season is running with at least four players there is one table, with the first four
+  seated. Nobody creates or starts a game and nobody takes a seat by themselves: when all four are there the game
+  starts after a 10 second countdown (`TABLE_START_DELAY_MS`). When it ends the result stays up for 30 seconds
+  (`TABLE_NEXT_GAME_DELAY_MS`) and the next game starts. Players beyond the first four are reserves, in a line (see
+  Rotation). Someone seated cannot be removed from the roster: cancel the game first. A season that ends **by its
+  dates** lets the game in progress finish and then closes the table (the game counts in no season, as before); an
+  admin's **End now** stops the game in progress (recorded as cancelled, never scored) and closes the table. **Cancel
+  game** clears the table and, with a season running, a fresh one opens seated with the roster. A season that starts by
+  its dates opens the table (a clock checks every few seconds). The countdown shows on screen and carries on after a
+  server restart.
   (`DEV_TABLES=1` is for development and tests: an admin creates the game and starts it by hand, with computer seats
   and 3-seat tables. Production never sets it.)
+- **Watching.** Anyone who is not seated sees **Watch the game** in the lobby: they see what is played at the table,
+  never anyone's cards, and they can chat. **Stop watching** goes back to the lobby.
+- **Rotation.** When a season has more players than seats (the extras are reserves, in a line), the player with the
+  **lowest score in a game**, the loser who paid the most, goes out when the next game starts: to the back of the line,
+  and the first reserve takes the seat. The winner and the others stay. A tie goes to whoever has been seated longest
+  (and, if that ties too, one of the tied is picked at random). **Leaving counts as the lowest score**: leaving the
+  result is that game's one swap (the lowest scorer then stays), and leaving a game in progress costs the most a round
+  can (-56 for four players) and voids it for the other three. With exactly as many players as seats nobody rotates and
+  nobody can leave. The result screen says who goes out and who comes in.
 - An admin can **switch to the player view** (account menu) to see the game without the admin controls; it only hides
   them on this device, and the server still checks everything.
 - A started game **holds its seats until it finishes or an admin cancels it** (you can only leave on the result). There is no turn timer; the game waits

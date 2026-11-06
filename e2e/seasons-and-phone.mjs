@@ -1,6 +1,7 @@
 // Seasons admin UI, cumulative totals over two real games, and a phone-sized touch session.
 import { openDb, recordGame } from '../server/db.js';
 import { createUser } from '../server/auth.js';
+import { setMembers } from '../server/roster.js';
 import { launch, newPage, sleep, HELPERS, outDir } from './lib.mjs';
 
 const OUT = outDir(process.argv[2]);
@@ -25,6 +26,7 @@ async function seedGames() {
   for (const name of ['bob', 'cat', 'dan']) {
     others.push((await createUser(db, name, PW)).id);
   }
+  setMembers(db, 1, [boss, ...others]); // a running season has players: these four
   const t = Date.now() - 10 * 60 * 1000;
   db.prepare('UPDATE seasons SET starts = ?').run(t - 1000); // Season 1 began just now; the games are a little older
   const human = (k, deltas) =>
@@ -82,12 +84,12 @@ async function main() {
   await P.waitFor(`document.getElementById('seasonMsg').textContent === 'Season updated.'`, 8000, 'season updated');
   // Season 2 starts exactly when Season 1 ends.
   await P.ev(
-    `document.getElementById('seasonName').value='Season 2'; document.getElementById('seasonStart').value=${localIn(end1)}; document.getElementById('seasonEnd').value=${localIn(end1 + 30 * 86400e3)}; document.getElementById('seasonSave').click()`,
+    `document.querySelectorAll('#seasonPicks input').forEach((i) => { if (!i.checked) i.click(); }); document.getElementById('seasonName').value='Season 2'; document.getElementById('seasonStart').value=${localIn(end1)}; document.getElementById('seasonEnd').value=${localIn(end1 + 30 * 86400e3)}; document.getElementById('seasonSave').click()`,
   );
   await P.waitFor(`document.getElementById('seasonMsg').textContent === 'Season created.'`, 8000, 'season created');
   // An overlapping season is refused, with the reason shown.
   await P.ev(
-    `document.getElementById('seasonName').value='Clash'; document.getElementById('seasonStart').value=${localIn(now)}; document.getElementById('seasonEnd').value=''; document.getElementById('seasonSave').click()`,
+    `document.querySelectorAll('#seasonPicks input').forEach((i) => { if (!i.checked) i.click(); }); document.getElementById('seasonName').value='Clash'; document.getElementById('seasonStart').value=${localIn(now)}; document.getElementById('seasonEnd').value=''; document.getElementById('seasonSave').click()`,
   );
   await P.waitFor(`document.getElementById('seasonMsg').textContent.includes('overlap')`, 8000, 'overlap error');
   check('overlapping seasons are refused with a clear message', true, await P.text('seasonMsg'));

@@ -1722,3 +1722,28 @@ table.solo-stats th:not(:first-child) {
   font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
+
+/* Watching a game: there is no hand to play, only the table. */
+.spectating .hand,
+.spectating .actions > button:not(.log-btn, .online-only) {
+  display: none;
+}
+
+/* The players ticked when an admin makes a season. */
+.picks {
+  border: 1px solid #3c8a68;
+  border-radius: 10px;
+  margin: 10px 0;
+  padding: 8px 12px;
+}
+
+.picks legend {
+  padding: 0 6px;
+  color: var(--accent);
+}
+
+.picks-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 12px;
+}

@@ -1,6 +1,7 @@
-// A season game with the production rules (no development switch): there is always a table while a season is
-// running, nobody creates or starts a game, four people seated start one by themselves, and ending the season
-// closes the table. The admin is in a real browser; the other three players join from the side over the API.
+// A season game with the production rules (no development switch), through the real screens. An admin puts players
+// on a season's roster; the first four are seated and start a game by themselves; anyone else can only watch (never
+// seeing a hand) and chat; with a fifth player a seated person can leave at a cost and the reserve takes the seat;
+// ending the season closes the table; and a new season is made by ticking at least four players.
 import { launch, newPage, sleep, outDir } from './lib.mjs';
 import { openDb } from '../server/db.js';
 import { createUser } from '../server/auth.js';
@@ -26,137 +27,202 @@ const check = (label, ok, extra = '') => {
   if (!ok) throw new Error('check failed: ' + label);
 };
 
-// A person who is not in a browser: signs in and takes a seat over the API.
-async function personJoins(name) {
-  const login = await fetch(`${BASE}api/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', origin: BASE.slice(0, -1) },
-    body: JSON.stringify({ name, password: PW }),
-  });
-  const cookie = login.headers.get('set-cookie').split(';')[0];
-  const join = await fetch(`${BASE}api/game/join`, {
-    method: 'POST',
-    headers: { cookie, 'content-type': 'application/json', origin: BASE.slice(0, -1) },
-    body: '{}',
-  });
-  if (join.status !== 200) throw new Error(`${name} could not join: ${join.status}`);
+let A;
+let B;
+const byId = (id) => `document.getElementById(${JSON.stringify(id)})`;
+
+// The admin opens the Admin screen (or leaves it) from the account menu.
+async function toggleAdmin(page) {
+  await page.click('who');
+  await page.click('adminBtn');
 }
 
-let A;
-const byId = (id) => `document.getElementById(${JSON.stringify(id)})`;
+// In the Players dialog: pick a name from the "Add a player" list and press Add, then wait for it to be listed.
+async function addPlayer(page, name, expectedRows) {
+  await page.ev(
+    `(() => { const s = ${byId('playersAdd')}; s.value = [...s.options].find((o) => o.textContent === ${JSON.stringify(name)}).value; ${byId('playersAddBtn')}.click(); })()`,
+  );
+  await page.waitFor(
+    `document.querySelectorAll('#playersBody tr').length === ${expectedRows}`,
+    8000,
+    `${name} on the roster`,
+  );
+}
+
+// A two-step button ("Click again to confirm"). Opening the Admin screen starts a refresh that rebuilds the table and
+// disarms the button, so if the second click finds nothing, start again.
+async function confirmClick(page, selector, label) {
+  for (let i = 0; i < 8; i++) {
+    await page.clickButton(selector, label);
+    await sleep(300);
+    if (await page.clickButton(selector, 'Click again to confirm')) return;
+  }
+  throw new Error(`could not confirm ${label}`);
+}
+
+const playerRows = (page) =>
+  page.ev(
+    `[...document.querySelectorAll('#playersBody tr')].map((r) => [...r.children].slice(1, 3).map((c) => c.textContent).join(': '))`,
+  );
+
 async function main() {
   console.log('CLI:', env.makeAdmin('boss', PW).stdout.trim());
   const db = openDb(env.env.DB_FILE);
-  for (const name of ['bob', 'cat', 'dan']) await createUser(db, name, PW);
+  for (const name of ['bob', 'cat', 'dan', 'eve', 'wendy']) await createUser(db, name, PW);
   db.close();
   await env.state.start();
   A = await newPage(CDP, 'A', OUT);
   await A.goto(BASE);
   await A.signIn('boss', PW);
 
-  // ---- nobody creates a game ----
+  // ---- a season with no players has no table, and the admin is told what to do ----
   check('there is no Create game button: the admin does not make games', await A.ev(`${byId('createRow')}.hidden`));
-  const facts = await A.text('gameBox');
+  await A.waitFor(`${byId('gameBox')}.textContent.includes('players it needs')`, 8000, 'the season note');
+  const none = (await A.text('gameBox')).replace(/\s+/g, ' ');
   check(
-    'the lobby shows the table, waiting for players, with no host',
-    facts.includes('Waiting for players') && facts.includes('0 of 4') && !facts.includes('Host'),
-    facts.replace(/\s+/g, ' ').slice(0, 120),
+    'with no players the lobby says the season needs four, and where to add them',
+    /Season 1 is running but has 0 of the 4 players it needs/.test(none) &&
+      /Admin, then Seasons, then Players/.test(none),
+    none,
   );
+  await A.shot('1-no-players');
+
+  // ---- the admin adds the roster: boss, bob, cat, dan sit down; eve is a reserve ----
+  await toggleAdmin(A);
+  await A.waitFor(
+    `!${byId('admin')}.hidden && document.querySelectorAll('#seasonsBody tr').length === 1`,
+    8000,
+    'admin',
+  );
+  const cols = await A.ev(`[...document.querySelectorAll('.lb.users th')].map((t) => t.textContent)`);
+  check('the seasons table has a Players column', cols.includes('Players'));
   check(
-    'and a Take a seat button',
-    await A.ev(`[...document.querySelectorAll('#gameBox button')].some((b) => b.textContent === 'Take a seat')`),
+    'Season 1 has no players yet',
+    (await A.ev(`document.querySelector('#seasonsBody tr').children[4].textContent`)) === '0',
   );
-  await A.shot('1-lobby-table');
-
-  await A.clickButton('#gameBox', 'Take a seat');
-  await A.waitFor(`!${byId('waitRoom')}.hidden`, 8000, 'waiting room');
-  const info = (await A.text('waitInfo')).replace(/\s+/g, ' ');
+  await A.clickButton('#seasonsBody', 'Players');
+  await A.waitFor(`${byId('playersDlg')}.open`, 8000, 'the Players dialog');
+  check('the Players dialog opens for the season', (await A.text('playersTitle')).startsWith('Season 1'));
+  let n = 0;
+  for (const name of ['boss', 'bob', 'cat']) await addPlayer(A, name, ++n);
   check(
-    'the waiting room says the game starts by itself, with no computer players',
-    /by itself/.test(info) && /no computer players/.test(info),
-    info,
+    'three players are not enough: no table yet',
+    (await playerRows(A)).every((r) => r.endsWith('Will sit down')),
   );
-  check('there is no Start button', await A.ev(`${byId('startBtn')}.hidden`));
-  check('and it says how many more are needed', (await A.text('waitMsg')).includes('3 more players'));
-  const seats = await A.ev(`[...document.querySelectorAll('#waitSeats li')].map(l => l.textContent)`);
-  check(
-    'empty seats wait for a person; none says a computer will play',
-    seats.filter((s) => s.includes('waiting for a player')).length === 3 && !seats.join(' ').includes('AI'),
-    seats.join(' | '),
+  await addPlayer(A, 'dan', 4);
+  await A.waitFor(
+    `[...document.querySelectorAll('#playersBody tr')].every((r) => r.children[2].textContent === 'Seated')`,
+    8000,
+    'the four are seated',
   );
-  await A.shot('2-waiting-for-people');
+  check('the fourth player seats the first four', true, (await playerRows(A)).join(' | '));
+  const removeSeated = await A.ev(`[...document.querySelectorAll('#playersBody button')].every((b) => b.disabled)`);
+  check('a seated player cannot be removed', removeSeated);
+  await addPlayer(A, 'eve', 5);
+  const rows = await playerRows(A);
+  check('a fifth player is a reserve', rows[4] === 'eve: Reserve 1', rows.join(' | '));
+  await A.shot('2-players-dialog');
+  await A.click('playersClose');
+  await A.waitFor(
+    `document.querySelector('#seasonsBody tr').children[4].textContent === '5'`,
+    8000,
+    'the players count',
+  );
+  check('the seasons table now counts five players', true);
 
-  await personJoins('bob');
-  await personJoins('cat');
-  await A.waitFor(`${byId('waitMsg')}.textContent.includes('1 more player')`, 8000, 'one more needed');
-  check('with three people there is no countdown yet', (await A.text('waitCount')) === '');
-
-  await personJoins('dan');
-  await A.waitFor(`${byId('waitCount')}.textContent.includes('The game starts in')`, 8000, 'the countdown');
-  check('the fourth person starts a countdown on screen', true, await A.text('waitCount'));
-  await A.shot('3-countdown');
-
-  // ---- and then it starts, without anyone pressing anything ----
+  // ---- back in the player view: the table, and the countdown to a game that starts by itself ----
+  await toggleAdmin(A);
+  await A.waitFor(
+    `!${byId('waitRoom')}.hidden || !${byId('tableMain')}.hidden`,
+    8000,
+    'boss is seated, so the waiting room or the table shows',
+  );
   await A.waitFor(
     `!${byId('tableMain')}.hidden && document.querySelectorAll('#hand .card').length === 14`,
-    15000,
+    20000,
     'the game starting by itself',
   );
-  check('the game started by itself and the cards were dealt', true);
-  const names = await A.ev(`[1, 2, 3].map(i => document.getElementById('seat-' + i).textContent)`);
+  check('the four seated people got a game without anyone pressing Start', true);
+  const names = await A.ev(`[1, 2, 3].map((i) => document.getElementById('seat-' + i).textContent)`);
   check(
-    'the other three seats are the three people, not computers',
-    ['bob', 'cat', 'dan'].every((n) => names.join(' ').includes(n)) && !/bot/i.test(names.join(' ')),
+    'the other seats are the roster players, not computers',
+    ['bob', 'cat', 'dan'].every((nm) => names.join(' ').includes(nm)) && !/bot/i.test(names.join(' ')),
     names.join(' | '),
   );
-  await A.shot('4-playing');
+  await A.shot('3-playing');
 
-  // ---- the admin can look at the game as a player ----
-  await A.click('who');
+  // ---- a person who is not seated can only watch: no seat, no cards, but chat ----
+  B = await newPage(CDP, 'B', OUT);
+  await B.goto(BASE);
+  await B.signIn('wendy', PW);
+  await B.waitFor(`${byId('gameBox')}.textContent.includes('Watch the game')`, 8000, 'the lobby offering to watch');
+  const lobbyB = await B.text('gameBox');
   check(
-    'an admin sees the Admin button and a switch to the player view',
-    (await A.ev(`!${byId('adminBtn')}.hidden && !${byId('viewBtn')}.hidden`)) &&
-      (await A.text('viewBtn')) === 'Switch to player view',
+    'someone not on the roster is told they can watch',
+    /Watch the game/.test(lobbyB) && !/Take a seat/.test(lobbyB),
   );
-  await A.click('viewBtn');
   check(
-    'in the player view the Admin button is gone, and the switch offers the way back',
-    (await A.ev(`${byId('adminBtn')}.hidden`)) && (await A.text('viewBtn')) === 'Switch to admin view',
+    'and there is no seat to take',
+    await B.ev(`![...document.querySelectorAll('#gameBox button')].some((b) => /seat|join/i.test(b.textContent))`),
   );
-  await A.click('who');
-  await A.click('viewBtn');
-  check('and switching back brings it back', await A.ev(`!${byId('adminBtn')}.hidden`));
-
-  // ---- leaving a seat: not with only four players, at a cost once there is a fifth ----
+  await B.shot('4-lobby-watcher');
+  await B.clickButton('#gameBox', 'Watch the game');
+  await B.waitFor(`!${byId('tableMain')}.hidden`, 8000, 'the table, watched');
   check(
-    'with only four accounts there is no way to leave a seat in a game',
-    await A.ev(`${byId('forfeitBtn')}.hidden`),
+    'a watcher sees the table with the four players named',
+    await B.ev(`['boss', 'bob', 'cat', 'dan'].every((nm) => document.body.textContent.includes(nm))`),
   );
-  const db2 = openDb(env.env.DB_FILE);
-  await createUser(db2, 'eve', PW); // a fifth account: now the seat could be filled by someone else
-  db2.close();
-  await A.goto(BASE);
+  check('and is never shown a hand', (await B.ev(`document.querySelectorAll('#hand .card').length`)) === 0);
+  check(
+    'the bottom seat is a player with a card count, like the others',
+    (await B.text('selInfo')).includes('boss has 14 cards'),
+    await B.text('selInfo'),
+  );
+  check(
+    'with no Play or Pass buttons, and nobody called You',
+    (await B.ev(
+      `['playBtn', 'passBtn'].every((id) => getComputedStyle(document.getElementById(id)).display === 'none')`,
+    )) &&
+      !(await B.ev(
+        `document.getElementById('selInfo').textContent.includes('You') || [1, 2, 3].some((i) => document.getElementById('seat-' + i).textContent.includes('You'))`,
+      )),
+  );
+  check('and there is a Stop watching button', await B.ev(`!${byId('watchStopBtn')}.hidden`));
+  await B.shot('5-watching');
+  await B.waitFor(`!${byId('chat')}.hidden`, 8000, 'chat on for a watcher');
+  await B.ev(`${byId('chatInput')}.value = 'hello from the stands'; ${byId('chatSend')}.click()`);
   await A.waitFor(
-    `!${byId('tableMain')}.hidden && !${byId('forfeitBtn')}.hidden`,
-    15000,
-    'Leave seat offered with five accounts',
+    `${byId('chatMsgs')}.textContent.includes('hello from the stands')`,
+    8000,
+    'the message reaching the table',
   );
-  check('with a fifth account a Leave seat button appears', true);
-  await A.shot('4b-leave-seat');
+  check('a watcher can chat, and the players see it', true);
+  await B.click('watchStopBtn');
+  await B.waitFor(`!${byId('lobbyHome')}.hidden`, 8000, 'back in the lobby');
+  check(
+    'Stop watching goes back to the lobby, where they can watch again',
+    (await B.text('gameBox')).includes('Watch the game'),
+  );
+
+  // ---- leaving a seat with a fifth player: the game is void, it costs the leaver the most, the reserve sits ----
+  await A.waitFor(`!${byId('forfeitBtn')}.hidden`, 8000, 'Leave seat offered with five players');
+  check('with a fifth player a Leave seat button appears', true);
   await A.click('forfeitBtn');
   const warn = await A.text('forfeitBtn');
   check('it asks again and says what it costs', /Click again/.test(warn) && warn.includes('56 points'), warn);
   await A.click('forfeitBtn');
   await A.waitFor(
-    `!${byId('lobbyHome')}.hidden && ${byId('gameBox')}.textContent.includes('Waiting for players')`,
+    `!${byId('lobbyHome')}.hidden && ${byId('gameBox')}.textContent.includes('Starting')`,
     10000,
     'the lobby after leaving',
   );
-  const lobby = await A.text('gameBox');
+  const lobby = (await A.text('gameBox')).replace(/\s+/g, ' ');
   check(
-    'leaving the game takes you to the lobby, and the other three are still waiting for a fourth',
-    lobby.includes('3 of 4'),
-    lobby.replace(/\s+/g, ' ').slice(0, 100),
+    'leaving takes you to the lobby, and the reserve (eve) has taken the seat',
+    ['eve', 'bob', 'cat', 'dan'].every((nm) => lobby.includes(nm)) &&
+      !lobby.includes('boss') &&
+      lobby.includes('4 of 4'),
+    lobby.slice(0, 120),
   );
   const dbRead = openDb(env.env.DB_FILE);
   const forfeit = dbRead
@@ -170,23 +236,69 @@ async function main() {
     forfeit.length === 1 && forfeit[0].status === 'forfeit' && forfeit[0].delta === -56 && forfeit[0].name === 'boss',
     JSON.stringify(forfeit.map((r) => ({ ...r }))),
   );
-  await A.shot('4c-after-leaving');
-
-  // ---- ending the season stops the game and closes the table ----
-  await A.ev(
-    `fetch('/api/seasons').then(r => r.json()).then(j => fetch('/api/admin/seasons/' + j.seasons[0].id + '/end', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).then(r => r.status)`,
+  check(
+    'boss, no longer seated, is offered the watch button, not a seat',
+    await A.ev(`[...document.querySelectorAll('#gameBox button')].some((b) => b.textContent === 'Watch the game')`),
   );
+  await A.shot('6-after-leaving');
+
+  // ---- ending the season (End now, twice to confirm) closes the table; the picker drops "Current season" ----
+  await toggleAdmin(A);
+  await A.waitFor(
+    `!${byId('admin')}.hidden && document.querySelectorAll('#seasonsBody tr').length === 1`,
+    8000,
+    'admin',
+  );
+  await confirmClick(A, '#seasonsBody', 'End now');
+  await A.waitFor(
+    `document.querySelector('#seasonsBody tr').children[1].textContent === 'past'`,
+    8000,
+    'the season ended',
+  );
+  const picker = await A.ev(`[...document.querySelectorAll('#lbSeason option')].map((o) => o.textContent)`);
+  check(
+    'with no season running the leaderboard picker does not offer "Current season"',
+    !picker.some((t) => /Current season/.test(t)) && picker.includes('All-time'),
+    picker.join(' | '),
+  );
+  await toggleAdmin(A);
   await A.waitFor(
     `!${byId('lobbyHome')}.hidden && ${byId('gameBox')}.textContent.includes('No season is running')`,
     10000,
     'the lobby saying there is no season',
   );
   check('ending the season closes the table and the lobby says no season is running', true, await A.text('gameBox'));
-  await A.click('who');
-  await A.click('viewBtn');
-  await A.waitFor(`${byId('gameBox')}.textContent.includes('There is no table right now')`, 5000, 'the player wording');
-  check('in the player view it says so without pointing at Admin', true, await A.text('gameBox'));
-  await A.shot('5-no-season');
+
+  // ---- a new season: tick the players; fewer than four is refused ----
+  await toggleAdmin(A);
+  await A.waitFor(
+    `!${byId('admin')}.hidden && document.querySelectorAll('#seasonPicks input').length >= 5`,
+    8000,
+    'the player tick-list',
+  );
+  await A.ev(`${byId('seasonName')}.value = 'Autumn'`);
+  const tick = (name) =>
+    A.ev(
+      `[...document.querySelectorAll('#seasonPicks label')].find((l) => l.textContent.trim() === ${JSON.stringify(name)}).querySelector('input').click()`,
+    );
+  await tick('bob');
+  await tick('cat');
+  await A.click('seasonSave');
+  await A.waitFor(`${byId('seasonMsg')}.textContent.includes('at least 4 players')`, 5000, 'the refusal');
+  check('a new season with only two players ticked is refused', true, await A.text('seasonMsg'));
+  await tick('dan');
+  await tick('eve');
+  await A.click('seasonSave');
+  await A.waitFor(`${byId('seasonMsg')}.textContent === 'Season created.'`, 8000, 'the new season');
+  check('with four ticked the season is created', true);
+  const tableRow = await A.ev(
+    `[...document.querySelectorAll('#seasonsBody tr')].map((r) => [r.children[0].textContent, r.children[1].textContent, r.children[4].textContent].join(': '))`,
+  );
+  check('and listed as running with four players', tableRow.includes('Autumn: active: 4'), tableRow.join(' | '));
+  await A.shot('7-new-season');
+  await toggleAdmin(A);
+  await A.waitFor(`${byId('gameBox')}.textContent.includes('bob, cat, dan, eve')`, 8000, 'the new season table');
+  check('and its table opens with the four ticked players, in the order ticked', true);
 }
 
 let failed = false;
@@ -195,13 +307,17 @@ try {
 } catch (err) {
   failed = true;
   console.log('FAILED:', err.message);
-  try {
-    if (A) await A.shot('failure');
-  } catch {
-    /* ignore */
+  for (const p of [A, B]) {
+    try {
+      if (p) await p.shot(`failure-${p.name}`);
+    } catch {
+      /* ignore */
+    }
   }
 }
-if (A) console.log(`browser errors [${A.name}]:`, A.errors.length ? [...new Set(A.errors)] : 'none');
+for (const p of [A, B]) {
+  if (p) console.log(`browser errors [${p.name}]:`, p.errors.length ? [...new Set(p.errors)] : 'none');
+}
 console.log(`${results.filter((r) => r.ok).length} checks passed${failed ? ', then FAILED' : ''}`);
 await sleep(100);
 await env.cleanup();
