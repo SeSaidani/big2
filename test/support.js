@@ -1,9 +1,11 @@
 // Shared helpers for the server tests (not itself a test file).
 
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { createApp } from '../server/index.js';
 import { createPool } from '../server/ai-pool.js';
 import { createUser } from '../server/auth.js';
+import { addSubscription } from '../server/push-store.js';
 import { chooseMove } from '../src/ai/agents.js';
 import { mulberry32 } from '../src/cards.js';
 
@@ -114,13 +116,69 @@ export class Client {
   }
 }
 
-// Creates the account directly in the database and signs in through the API.
-// A distinct, valid UK mobile-style number for each call (accounts need one, and it is unique).
-let phoneCounter = 0;
-export const nextPhone = () => `+4477009${String(++phoneCounter).padStart(5, '0')}`;
+// A receiver, written from the other side of RFC 8291: what a phone does with a push body.
+export function decryptPush(body, uaPrivate, uaPublic, auth) {
+  const salt = body.subarray(0, 16);
+  const rs = body.readUInt32BE(16);
+  const idlen = body[20];
+  const asPublic = body.subarray(21, 21 + idlen);
+  const sealed = body.subarray(21 + idlen);
+  assert.equal(rs, 4096);
+  const ecdh = crypto.createECDH('prime256v1');
+  ecdh.setPrivateKey(Buffer.from(uaPrivate, 'base64url'));
+  const shared = ecdh.computeSecret(asPublic);
+  const info = Buffer.concat([Buffer.from('WebPush: info\0'), Buffer.from(uaPublic, 'base64url'), asPublic]);
+  const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
+  const prk = hmac(Buffer.from(auth, 'base64url'), shared);
+  const ikm = hmac(prk, Buffer.concat([info, Buffer.from([1])]));
+  const prk2 = hmac(salt, ikm);
+  const cek = hmac(prk2, Buffer.concat([Buffer.from('Content-Encoding: aes128gcm\0'), Buffer.from([1])])).subarray(
+    0,
+    16,
+  );
+  const nonce = hmac(prk2, Buffer.concat([Buffer.from('Content-Encoding: nonce\0'), Buffer.from([1])])).subarray(0, 12);
+  const d = crypto.createDecipheriv('aes-128-gcm', cek, nonce);
+  d.setAuthTag(sealed.subarray(sealed.length - 16));
+  const plain = Buffer.concat([d.update(sealed.subarray(0, sealed.length - 16)), d.final()]);
+  assert.equal(plain[plain.length - 1], 2, 'the last record ends with 0x02');
+  return plain.subarray(0, plain.length - 1);
+}
 
-export async function makeUser(ctx, name, { isAdmin = false, phone = nextPhone() } = {}) {
-  await createUser(ctx.app.db, name, PASSWORD, { isAdmin, phone, verified: true });
+// A phone that can be sent push messages: its subscription as a browser reports it, and a way to read
+// what was sent to it.
+export class FakeDevice {
+  constructor(n = 0) {
+    this.ecdh = crypto.createECDH('prime256v1');
+    this.ecdh.generateKeys();
+    this.p256dh = this.ecdh.getPublicKey().toString('base64url');
+    this.auth = crypto.randomBytes(16).toString('base64url');
+    this.endpoint = `https://fcm.googleapis.com/fcm/send/fake-${crypto.randomBytes(6).toString('hex')}-${n}`;
+  }
+
+  // The object a browser's pushManager.subscribe() gives (as JSON).
+  get subscription() {
+    return { endpoint: this.endpoint, keys: { p256dh: this.p256dh, auth: this.auth } };
+  }
+
+  // The text of a message that was POSTed to this device's endpoint.
+  read(body) {
+    return decryptPush(
+      Buffer.from(body),
+      this.ecdh.getPrivateKey().toString('base64url'),
+      this.p256dh,
+      this.auth,
+    ).toString();
+  }
+}
+
+// Gives the user a device straight in the database.
+export function newDevice(db, userId, n = 0) {
+  addSubscription(db, userId, new FakeDevice(n).subscription, { label: 'Test phone' });
+}
+
+// Creates the account directly in the database and signs in through the API.
+export async function makeUser(ctx, name, { isAdmin = false } = {}) {
+  await createUser(ctx.app.db, name, PASSWORD, { isAdmin });
   const c = new Client(ctx.base);
   await c.login(name);
   return c;
@@ -142,6 +200,9 @@ const TOP = [
   'seats',
   'game',
   'result',
+  'next',
+  'leave',
+  'notice',
   'hands',
 ].sort();
 const SEAT = ['kind', 'name', 'level', 'count', 'online'].sort();

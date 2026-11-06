@@ -3,12 +3,27 @@
 
 import { isJoker, suitOf, isRedSuit, cardName, sortByRank, sortBySuit } from './cards.js';
 import { cardSVG } from './card-art.js';
+import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
 import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip } from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
 import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
+import {
+  describeDevice,
+  alertState,
+  firstPrompt,
+  browserEnv,
+  permission,
+  registerWorker,
+  currentSubscription,
+  turnOn,
+  turnOff,
+  turnOffAll,
+  howToAllow,
+  syncSubscription,
+} from './push-client.js';
 
 // Seats are numbered clockwise from you. At a table of four they sit West, North, East; at three, West and East.
 const SOLO_NAMES = { 4: ['You', 'West', 'North', 'East'], 3: ['You', 'West', 'East'] };
@@ -46,10 +61,12 @@ let lobbyGame = null; // summary of the one game, or null
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
-let lbKind = 'human';
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
 let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
+// An admin can look at the game as a player sees it (no admin controls); the choice is kept on this device.
+const adminUi = () => !!user && user.isAdmin && localStorage.getItem('big2.view') !== 'player';
+let devTables = false; // the server's development switch (computer seats and 3-seat tables online); off in production
 let editingSeason = null;
 
 // ---------- AI worker ----------
@@ -312,11 +329,6 @@ function renderSelection() {
   $('sortBtn').textContent = `Sort: ${sortMode}`;
 }
 
-function renderRecord() {
-  const rec = JSON.parse(localStorage.getItem('big2.record') || '{"played":0,"won":0}');
-  $('record').textContent = rec.played ? `You've won ${rec.won} of ${rec.played}` : '';
-}
-
 function render() {
   const n = game.hands.length;
   $('seat-2').hidden = n === 3; // the North seat is empty at a table of three
@@ -349,6 +361,7 @@ function renderSoloChip() {
 }
 
 function startGame() {
+  soloGameId = newGameId();
   renderSoloChip();
   gen++;
   pending.clear();
@@ -450,11 +463,14 @@ async function commit(cards) {
 function endRound() {
   const w = game.winner;
   setStatus('');
-  const rec = JSON.parse(localStorage.getItem('big2.record') || '{"played":0,"won":0}');
-  rec.played++;
-  if (w === 0) rec.won++;
-  localStorage.setItem('big2.record', JSON.stringify(rec));
-  renderRecord();
+  // The round is reported to my own solo table (kept and retried if the server cannot be reached).
+  reportSoloResult({
+    clientId: soloGameId,
+    level,
+    players: game.hands.length,
+    won: w === 0,
+    delta: scoreRound(game).delta[0],
+  });
   log(w === 0 ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
@@ -531,6 +547,10 @@ $('helpBtn').addEventListener('click', () => {
 $('helpClose').addEventListener('click', () => $('helpDlg').close());
 $('helpX').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
+// After a solo round: choose the level and players first, just look at the table, or go to the online lobby.
+$('againNewBtn').addEventListener('click', () => $('newBtn').click());
+$('endClose').addEventListener('click', () => ($('overlay').hidden = true));
+$('endOnline').addEventListener('click', () => $('modeOnline').click());
 // The play log (and the chat under it). Beside the table it can be folded away. On a phone there is
 // no room beside the table, so it is a sheet over it: the Log button opens it, the × closes it.
 const logPanel = document.querySelector('.log');
@@ -636,8 +656,10 @@ function beginOnline() {
   $('who').textContent = user.name;
   show('account', true);
   show('passwordBtn', true);
-  show('phoneBtn', true);
-  show('adminBtn', user.isAdmin);
+  show('alertsBtn', true);
+  show('adminBtn', adminUi());
+  show('viewBtn', user.isAdmin);
+  renderViewBtn();
   adminView = false;
   viewingLobby = false;
   table = null;
@@ -646,8 +668,7 @@ function beginOnline() {
   refreshSeasons();
   refreshLeaderboard();
   route();
-  // Everyone needs a verified number to play online: ask straight away.
-  if (user.phoneRequired) openPhoneDialog();
+  startAlerts();
 }
 
 // (Re)open the live stream. The server answers every connection with the
@@ -721,6 +742,68 @@ function sessionLost() {
 
 // ---- which screen is showing ----
 // table: the game table; lobby: sign-in home or the waiting room; admin.
+// "The game starts in 7s": counted down in the browser from the moment the server's view arrived.
+let countdownTimer = null;
+function renderCountdown() {
+  const t = table;
+  let line = '';
+  if (t && t.next) {
+    const s = Math.max(0, Math.ceil((t.next.deadline - Date.now()) / 1000));
+    line =
+      t.next.kind === 'start'
+        ? `The game starts in ${s}s.`
+        : `The next game starts in ${s}s, with the same players if you stay seated.`;
+  }
+  $('waitCount').textContent = t && t.status === 'waiting' ? line : '';
+  $('endCount').textContent = t && t.status === 'done' ? line : '';
+}
+function syncCountdown() {
+  clearInterval(countdownTimer);
+  countdownTimer = null;
+  if (table && table.next) {
+    table.next.deadline = Date.now() + table.next.ms;
+    countdownTimer = setInterval(renderCountdown, 500);
+  }
+  renderCountdown();
+  renderLeaveButtons();
+}
+
+// What Leave can do for me right now comes from the server (t.leave): 'free', 'forfeit' (mid-game: it costs the most a
+// round can) or null. Leaving mid-game asks twice, and says what it costs.
+let forfeitTimer = null;
+const resetForfeitBtn = () => {
+  clearTimeout(forfeitTimer);
+  forfeitTimer = null;
+  $('forfeitBtn').textContent = 'Leave seat';
+};
+function renderLeaveButtons() {
+  const rule = table ? table.leave : null;
+  const forfeit = !!table && table.status === 'playing' && rule === 'forfeit';
+  show('forfeitBtn', forfeit);
+  if (!forfeit) resetForfeitBtn();
+  if (!devTables) show('endLeave', !!table && table.status === 'done' && rule === 'free');
+}
+
+async function forfeitSeat() {
+  if (!forfeitTimer) {
+    $('forfeitBtn').textContent = `Click again: leave and lose ${forfeitPenalty(table.seats.length)} points`;
+    forfeitTimer = setTimeout(resetForfeitBtn, 5000);
+    return;
+  }
+  resetForfeitBtn();
+  try {
+    const r = await api.leave();
+    if (r.game !== undefined) lobbyGame = r.game;
+    onTable(r.table);
+  } catch (err) {
+    setStatus(err.message);
+  }
+}
+
+function renderViewBtn() {
+  $('viewBtn').textContent = adminUi() ? 'Switch to player view' : 'Switch to admin view';
+}
+
 function route() {
   if (mode !== 'online' || !user) return;
   const seated = !!table;
@@ -749,44 +832,47 @@ function renderLobbyHome() {
     if (cls) p.className = cls;
     box.appendChild(p);
   };
-  // Nobody joins or creates a game without a verified number: that is how we tell them it is their turn.
-  if (user.phoneRequired) {
-    show('createRow', false);
-    line(
-      user.phone
-        ? 'Confirm your phone number to play: we will text you a code.'
-        : 'Add your phone number to play online: we text you when it is your turn.',
-    );
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'primary';
-    b.textContent = user.phone ? 'Confirm my number' : 'Add my number';
-    b.addEventListener('click', openPhoneDialog);
-    box.appendChild(b);
-    return;
-  }
-  // A finished round's result does not block a new game (the server replaces it).
-  show('createRow', !!user.isAdmin && (!g || g.status === 'done'));
+  // Only with the development rules does an admin create games by hand; otherwise the table runs itself.
+  show('createRow', devTables && adminUi() && (!g || g.status === 'done'));
   if (!g) {
-    if (!user.isAdmin) line('No game is running. An admin starts the games.', 'muted');
+    if (devTables) {
+      if (!adminUi()) line('No game is running. An admin starts the games.', 'muted');
+    } else {
+      line(
+        adminUi()
+          ? 'No season is running, so there is no table. Create a season under Admin, then Seasons.'
+          : 'There is no table right now: games run while a season is running.',
+        'muted',
+      );
+    }
     return;
   }
   // The current game, as a card: who is hosting, where it is up to, who is in, and what the empty seats get.
-  const state = { waiting: 'Waiting to start', playing: 'In progress', done: 'Just finished' }[g.status] || g.status;
+  const state = devTables
+    ? { waiting: 'Waiting to start', playing: 'In progress', done: 'Just finished' }[g.status] || g.status
+    : {
+        waiting: g.humans === g.seats ? 'Starting' : 'Waiting for players',
+        playing: 'In progress',
+        done: 'Just finished: the next game starts soon',
+      }[g.status] || g.status;
   const empty = g.seats - g.humans;
   const facts = document.createElement('dl');
   facts.className = 'facts';
   for (const [label, value] of [
-    ['Host', g.host],
+    ...(devTables ? [['Host', g.host]] : []),
     ['Status', state],
     ['Table', `${g.seats} seats`],
-    ['Players', g.players.length ? g.players.join(', ') : 'nobody yet'],
-    [
-      'Computer',
-      empty > 0
-        ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}`
-        : 'no computer players',
-    ],
+    ['Players', `${g.players.length ? g.players.join(', ') : 'nobody yet'} (${g.humans} of ${g.seats})`],
+    ...(devTables
+      ? [
+          [
+            'Computer',
+            empty > 0
+              ? `${LEVEL_LABEL[g.aiLevel] || g.aiLevel} AI plays the ${empty} empty seat${empty === 1 ? '' : 's'}, so this game will not count on the leaderboard`
+              : 'no computer players',
+          ],
+        ]
+      : []),
   ]) {
     const dt = document.createElement('dt');
     dt.textContent = label;
@@ -809,31 +895,50 @@ function renderLobbyHome() {
   } else if (g.status === 'waiting') {
     const b = document.createElement('button');
     b.className = 'primary';
-    b.textContent = 'Join game';
+    b.textContent = devTables ? 'Join game' : 'Take a seat';
     b.addEventListener('click', joinGame);
     row.appendChild(b);
   } else {
-    line('This game is already running, so it cannot be joined. Watch for the next one.', 'muted');
+    line(
+      devTables
+        ? 'This game is already running, so it cannot be joined. Watch for the next one.'
+        : 'A game is in progress. When it ends the seats open up, or take one as soon as someone leaves.',
+      'muted',
+    );
   }
   box.appendChild(row);
 }
 
 function renderWaitRoom(t) {
-  $('waitInfo').textContent = `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI.`;
+  $('waitNotice').textContent = t.notice || '';
+  const needed = t.seats.filter((s) => s.kind === 'empty').length;
+  $('waitInfo').textContent = devTables
+    ? `Host: ${t.host}. Empty seats will be played by ${t.aiLevel} AI, and a game with computer players does not count on the leaderboard.`
+    : `This is a season game: it starts by itself a few seconds after all ${t.seats.length} seats are taken by people, with no computer players. When it ends the next one follows with the same people.`;
   const ul = $('waitSeats');
   ul.innerHTML = '';
   t.seats.forEach((s, i) => {
     const li = document.createElement('li');
     const empty = s.kind === 'empty';
     li.textContent = empty
-      ? `Seat ${i + 1}: empty (${t.aiLevel} AI will play)`
+      ? `Seat ${i + 1}: ${devTables ? `empty (${t.aiLevel} AI will play)` : 'waiting for a player'}`
       : `Seat ${i + 1}: ${s.name}${i === t.you ? ' (you)' : ''}`;
     if (empty) li.className = 'muted';
     ul.appendChild(li);
   });
-  show('startBtn', t.isHost);
+  show('startBtn', devTables && t.isHost); // production games start by themselves
+  $('startBtn').disabled = !devTables && needed > 0; // every seat needs a person
   if (!$('waitMsg').textContent || $('waitMsg').className === 'muted') {
-    $('waitMsg').textContent = t.isHost ? '' : 'Waiting for the host to start.';
+    const more = `${needed} more ${needed === 1 ? 'player' : 'players'}`;
+    $('waitMsg').textContent = devTables
+      ? needed > 0 && !t.isHost
+        ? `Waiting for ${more} to join.`
+        : t.isHost
+          ? ''
+          : 'Waiting for the host to start.'
+      : needed > 0
+        ? `Waiting for ${more} to join.`
+        : '';
     $('waitMsg').className = 'muted';
   }
 }
@@ -883,7 +988,7 @@ async function refreshStats(seq) {
     body.appendChild(tr);
   };
   try {
-    const { season, rows, minGames, pending } = await api.stats(lbKind, lbSeason);
+    const { season, rows, minGames, pending } = await api.stats(lbSeason);
     if (seq !== lbSeq) return;
     if (!season) $('lbSeasonInfo').textContent = 'No season is running right now. Pick a past season, or All-time.';
     else if (season.id === null) {
@@ -895,7 +1000,7 @@ async function refreshStats(seq) {
     note(
       pending > 0
         ? `Still working out ${pending} game${pending === 1 ? '' : 's'}: look again in a moment.`
-        : `Shown from ${minGames} games. Only games saved with their deals count (the "of" column shows how many of a player's games that is).`,
+        : `Shown from ${minGames} games. Only online season games, saved with their deals, count (the "of" column shows how many of a player's games that is).`,
     );
     if (!rows.length) return message(season ? 'No games with their deals saved yet.' : '');
     body.innerHTML = '';
@@ -928,8 +1033,6 @@ async function refreshStats(seq) {
 async function refreshLeaderboard() {
   const body = $('lbBody');
   const seq = ++lbSeq;
-  $('lbHuman').classList.toggle('active', lbKind === 'human');
-  $('lbAi').classList.toggle('active', lbKind === 'ai');
   $('lbViewStandings').classList.toggle('active', lbView === 'standings');
   $('lbViewStats').classList.toggle('active', lbView === 'stats');
   show('lbStandings', lbView === 'standings');
@@ -948,7 +1051,7 @@ async function refreshLeaderboard() {
     body.appendChild(tr);
   };
   try {
-    const { season, rows } = await api.leaderboard(lbKind, lbSeason, lbSort);
+    const { season, rows } = await api.leaderboard(lbSeason, lbSort);
     if (seq !== lbSeq) return; // a newer request (another tab clicked) owns the table now
     if (!season) $('lbSeasonInfo').textContent = 'No season is running right now. Pick a past season, or All-time.';
     else if (season.id === null) {
@@ -1024,6 +1127,7 @@ function onTable(t) {
   acceptAny = false;
   const fresh = !prev || prev.id !== t.id || (prev.status !== 'playing' && t.status === 'playing');
   table = t;
+  syncCountdown();
   if (t.status === 'waiting') {
     if (fresh || !prev) $('waitMsg').textContent = '';
     return route();
@@ -1137,10 +1241,14 @@ function endOnlineRound(t, alreadyShown) {
   const notes = [];
   if (r && r.multiplier > 1) notes.push('Going out with a straight flush or five of a kind doubles every payment.');
   if (r && !r.saved) notes.push('This result could not be saved to the leaderboard.');
-  if (!t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
+  else if (r && r.hasAi) notes.push('This game had computer players, so it is not on the leaderboard.');
+  if (devTables && !t.isHost) notes.push(`Waiting for ${t.host} to start another round.`);
+  if (!devTables && t.leave === null) {
+    notes.push('There are only as many players as seats, so every seat stays filled.');
+  }
   $('endNote').className = 'muted';
   $('endNote').textContent = notes.join(' ');
-  show('againBtn', t.isHost);
+  show('againBtn', devTables && t.isHost); // production games follow on by themselves
 }
 
 async function sendMove(cards) {
@@ -1270,10 +1378,10 @@ function renderSeasons(list) {
     const edit = document.createElement('button');
     edit.textContent = 'Edit';
     edit.addEventListener('click', () => startSeasonEdit(s));
-    actions.append(
-      edit,
-      armedButton('Delete', () => seasonDo(() => api.admin.deleteSeason(s.id))),
-    );
+    actions.append(edit);
+    // A running season can be ended on the spot, so the next one can start.
+    if (s.status === 'active') actions.append(armedButton('End now', () => seasonDo(() => api.admin.endSeason(s.id))));
+    actions.append(armedButton('Delete', () => seasonDo(() => api.admin.deleteSeason(s.id))));
     tr.appendChild(actions);
     body.appendChild(tr);
   }
@@ -1308,6 +1416,7 @@ async function seasonDo(fn) {
   } catch (err) {
     $('seasonMsg').className = 'bad';
     $('seasonMsg').textContent = err.message;
+    $('seasonMsg').scrollIntoView({ block: 'nearest' }); // on a phone the message is below the fold
     return false;
   }
   await refreshAdmin();
@@ -1323,7 +1432,7 @@ async function saveSeason() {
   // An untouched field keeps its exact stored time (the input only shows minutes).
   const keep = (text, original) =>
     editingSeason && original !== null && text === toLocalInput(original) ? original : new Date(text).getTime();
-  const starts = startText ? keep(startText, editingSeason && editingSeason.starts) : NaN;
+  const starts = startText ? keep(startText, editingSeason && editingSeason.starts) : Date.now(); // empty means now
   const ends = endText ? keep(endText, editingSeason && editingSeason.ends) : null;
   if (Number.isNaN(starts) || (ends !== null && Number.isNaN(ends))) {
     $('seasonMsg').className = 'bad';
@@ -1357,14 +1466,16 @@ function renderAdmin(o, users, entries) {
     p.textContent = 'No game is running.';
     box.appendChild(p);
   } else {
-    p.textContent = `${o.game.host}'s game (${o.game.status}). Players: ${o.game.players.join(', ') || 'nobody'}. ${o.game.aiLevel} AI.`;
+    p.textContent = devTables
+      ? `${o.game.host}'s game (${o.game.status}). Players: ${o.game.players.join(', ') || 'nobody'}. ${o.game.aiLevel} AI.`
+      : `The table (${o.game.status}). Players: ${o.game.players.join(', ') || 'nobody'}.`;
     box.appendChild(p);
     const note = document.createElement('p');
     note.className = 'muted';
     note.textContent =
       o.game.status === 'playing'
         ? 'Cancelling a game in progress ends it for everyone and it is not scored.'
-        : 'Cancelling clears the table.';
+        : 'Cancelling clears the table' + (devTables ? '.' : ', and a fresh one opens while a season is running.');
     box.append(
       note,
       armedButton('Cancel game', () => adminDo(() => api.admin.cancelGame())),
@@ -1383,7 +1494,7 @@ function renderAdmin(o, users, entries) {
     };
     cell(u.name);
     cell([u.isAdmin ? 'admin' : 'player', u.disabled ? 'disabled' : ''].filter(Boolean).join(', '));
-    cell(u.phone ? `${u.phone} (${u.phoneVerified ? 'verified' : 'not verified'})` : 'none');
+    cell(u.devices ? `on (${u.devices} device${u.devices === 1 ? '' : 's'})` : 'off');
     cell(u.games);
     cell(u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'never');
     const actions = document.createElement('td');
@@ -1391,16 +1502,13 @@ function renderAdmin(o, users, entries) {
     const reset = document.createElement('button');
     reset.textContent = 'Reset password';
     reset.addEventListener('click', () => openReset(u));
-    const setPhone = document.createElement('button');
-    setPhone.textContent = 'Set phone';
-    setPhone.addEventListener('click', () => openAdminPhone(u));
     const dis = armedButton(u.disabled ? 'Enable' : 'Disable', () =>
       adminDo(() => api.admin.setDisabled(u.id, !u.disabled)),
     );
     const role = armedButton(u.isAdmin ? 'Remove admin' : 'Make admin', () =>
       adminDo(() => api.admin.setAdmin(u.id, !u.isAdmin)),
     );
-    actions.append(reset, setPhone, dis, role);
+    actions.append(reset, dis, role);
     tr.appendChild(actions);
     body.appendChild(tr);
   }
@@ -1440,11 +1548,10 @@ async function submitCreateUser() {
   msg.textContent = '';
   try {
     const name = $('newUserName').value.trim();
-    await api.admin.createUser(name, $('newUserPw').value, $('newUserPhone').value, $('newUserAdmin').checked);
-    msg.textContent = `Created ${name}. Give them the temporary password; they confirm their number when they sign in.`;
+    await api.admin.createUser(name, $('newUserPw').value, $('newUserAdmin').checked);
+    msg.textContent = `Created ${name}. Give them the temporary password.`;
     $('newUserName').value = '';
     $('newUserPw').value = '';
-    $('newUserPhone').value = '';
     $('newUserAdmin').checked = false;
   } catch (err) {
     msg.className = 'bad';
@@ -1454,86 +1561,279 @@ async function submitCreateUser() {
   await refreshAdmin();
 }
 
-// ---- my phone number ----
-function renderPhoneDialog() {
-  $('phoneCurrent').textContent = user.phone || 'none';
-  $('phoneState').textContent = user.phone ? (user.phoneVerified ? '(verified)' : '(not verified yet)') : '';
-  show('phoneCodeField', !!user.needsCode);
-  $('smsToggle').checked = !!user.smsEnabled;
+// ---- turn alerts (push notifications) ----
+const DEVICE = describeDevice(browserEnv());
+const IOS_HELP_SEEN = 'big2.iosHelpSeen';
+const ALERTS_DISMISSED = 'big2.alertsDismissed';
+let alertsNow = 'off'; // what alertState() says about this device
+let alertDevices = []; // every device of mine that has alerts on, as the server lists them
+
+async function readAlertState() {
+  let subscribed = false;
+  try {
+    subscribed = !!(await currentSubscription());
+  } catch {
+    /* no service worker here (a private window, an old browser): alertState says what is possible */
+  }
+  alertsNow = alertState(DEVICE, { permission: permission(), subscribed });
+  return alertsNow;
 }
 
-function openPhoneDialog() {
-  $('phoneMsg').textContent = '';
-  $('phoneInput').value = '';
-  $('phoneCode').value = '';
-  renderPhoneDialog();
-  if (!$('phoneDlg').open) $('phoneDlg').showModal();
+// On sign-in: a device that already has alerts is kept registered (quietly), and a phone that could have them
+// is offered them once: an iPhone is shown how to add the game to its Home Screen; any other phone gets a
+// one-tap bar. Nothing here asks the browser for permission: that only ever happens from a tap.
+async function startAlerts() {
+  try {
+    if (DEVICE.canPush) await registerWorker();
+    let state = await readAlertState();
+    if (state === 'on' || state === 'resubscribe') {
+      alertDevices = (await syncSubscription(api, DEVICE)).devices;
+      state = await readAlertState();
+    }
+    const first = firstPrompt(DEVICE, state, {
+      iosHelpSeen: !!localStorage.getItem(IOS_HELP_SEEN),
+      dismissed: !!localStorage.getItem(ALERTS_DISMISSED),
+    });
+    show('alertsBanner', first === 'banner');
+    if (first === 'ios-help') {
+      localStorage.setItem(IOS_HELP_SEEN, '1');
+      $('iosDlg').showModal();
+    }
+  } catch {
+    /* alerts are an extra: the game works without them, and the menu explains what is wrong */
+  }
 }
 
-async function phoneDo(fn, okText) {
-  const msg = $('phoneMsg');
-  msg.className = 'bad';
+const ALERT_STATUS = {
+  on: () => `Alerts are on for this device (${DEVICE.label}).`,
+  off: () => 'Alerts are off for this device.',
+  resubscribe: () => 'This browser allowed alerts, but this device needs switching on again.',
+  blocked: () => 'This browser has blocked alerts for this site.',
+  install: () => 'On an iPhone or iPad, alerts need the game on your Home Screen first.',
+  unsupported: () => 'This browser cannot show turn alerts.',
+};
+
+let lastAlertError = ''; // what the browser last said went wrong (shown in the details line at the bottom)
+
+const ALERT_HELP = {
+  blocked:
+    'Your browser is set to Block alerts for this site, so it will not ask. The steps below show how to change that: start with step 2.',
+  unsupported:
+    'Try Chrome on an Android phone, or on an iPhone add the game to the Home Screen (needs iOS 16.4 or newer). Computers work in Chrome, Edge and Firefox.',
+};
+
+function renderAlerts() {
+  $('alertsStatus').textContent = ALERT_STATUS[alertsNow]();
+  const help = $('alertsHelp');
+  help.textContent = ALERT_HELP[alertsNow] || '';
+  if (alertsNow === 'install') {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'primary';
+    b.textContent = 'Show me how';
+    b.addEventListener('click', () => $('iosDlg').showModal());
+    help.appendChild(b);
+  }
+  show('alertsOn', alertsNow === 'off' || alertsNow === 'resubscribe');
+  show('alertsTest', alertsNow === 'on');
+  show('alertsOff', alertsNow === 'on');
+  show('alertsDevices', alertDevices.length > 0);
+  // The steps for this phone and browser: always there when alerts are not on yet, open when something went wrong.
+  const how = howToAllow(DEVICE);
+  const needsHow = ['off', 'resubscribe', 'blocked'].includes(alertsNow);
+  show('alertsHow', needsHow);
+  $('alertsHowTitle').textContent = how.title;
+  const steps = $('alertsHowSteps');
+  steps.innerHTML = '';
+  for (const text of how.steps) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    steps.appendChild(li);
+  }
+  if (alertsNow === 'blocked') $('alertsHow').open = true;
+  // What this browser reports: one line to read out or photograph if something does not work.
+  $('alertsDiag').textContent = [
+    `This device: ${DEVICE.label}`,
+    `permission: ${permission()}`,
+    `alerts supported: ${DEVICE.canPush ? 'yes' : 'no'}${DEVICE.needsInstall ? ' (needs the Home Screen icon)' : ''}`,
+    `opened as an installed app: ${DEVICE.standalone ? 'yes' : 'no'}`,
+    ...(lastAlertError ? [`last problem: ${lastAlertError}`] : []),
+  ].join(' | ');
+  const list = $('alertsDeviceList');
+  list.innerHTML = '';
+  for (const d of alertDevices) {
+    const li = document.createElement('li');
+    li.textContent = `${d.label}: ${d.lastOk ? `last alert ${new Date(d.lastOk).toLocaleString()}` : 'no alert sent yet'}`;
+    list.appendChild(li);
+  }
+}
+
+async function openAlertsDialog() {
+  $('alertsMsg').textContent = '';
+  await readAlertState();
+  try {
+    alertDevices = (await api.push()).devices;
+  } catch {
+    alertDevices = [];
+  }
+  renderAlerts();
+  if (!$('alertsDlg').open) $('alertsDlg').showModal();
+}
+
+async function alertsDo(fn, okText = '') {
+  const msg = $('alertsMsg');
+  msg.className = 'muted';
   msg.textContent = '';
   try {
-    const reply = await fn();
-    if (reply && reply.user) user = reply.user;
-    if (okText) {
-      msg.className = 'muted';
-      msg.textContent = okText(reply);
+    await fn();
+    msg.textContent = okText;
+  } catch (err) {
+    msg.className = 'bad';
+    msg.textContent = err.message || 'Something went wrong.';
+    lastAlertError = err.name && err.name !== 'Error' ? `${err.name}: ${err.message}` : err.message || '';
+    $('alertsHow').open = true; // something went wrong: the steps are the next thing to read
+  }
+  await readAlertState();
+  renderAlerts();
+  show('alertsBanner', false);
+}
+
+// Straight from the tap: turnOn asks the browser's permission question before anything else.
+const alertsTurnOn = () =>
+  alertsDo(async () => {
+    const r = await turnOn(api, DEVICE);
+    if (r.permission === 'denied') {
+      throw new Error(
+        'The phone said no, or has notifications switched off for this browser. Follow the steps below to allow them, then press Turn on alerts again.',
+      );
     }
-  } catch (err) {
-    msg.textContent = err.message;
-    return false;
-  } finally {
-    renderPhoneDialog();
-    route();
-  }
-  return true;
-}
+    if (r.permission !== 'granted') {
+      throw new Error(
+        'No answer was given, so alerts are still off. If no question appeared on screen, follow the steps below.',
+      );
+    }
+    lastAlertError = '';
+    alertDevices = r.devices;
+  }, 'Alerts are on. Press Send a test alert to check.');
 
-const savePhone = () =>
-  phoneDo(
-    () => api.setPhone($('phoneInput').value),
-    (r) => (r.codeSent ? 'Saved. We texted you a 6-digit code: enter it below.' : 'Saved.'),
-  );
-const verifyPhoneCode = async () => {
-  if (
-    await phoneDo(
-      () => api.verifyPhone($('phoneCode').value),
-      () => 'Verified. Thank you.',
-    )
-  ) {
-    $('phoneCode').value = '';
-  }
-};
-const resendPhoneCode = () =>
-  phoneDo(
-    () => api.resendCode(),
-    () => 'A new code is on its way.',
-  );
-const toggleSms = () => phoneDo(() => api.setSms($('smsToggle').checked));
+const alertsTurnOffAll = () =>
+  alertsDo(async () => {
+    alertDevices = (await turnOffAll(api)).devices;
+  }, 'Alerts are off on all your devices.');
 
-// ---- an admin sets someone's number ----
-let adminPhoneTarget = null;
-function openAdminPhone(u) {
-  adminPhoneTarget = u;
-  $('adminPhoneName').textContent = u.name;
-  $('adminPhoneInput').value = '';
-  $('adminPhoneErr').textContent = '';
-  $('adminPhoneDlg').showModal();
-}
+const alertsTurnOff = () =>
+  alertsDo(async () => {
+    alertDevices = (await turnOff(api)).devices;
+  }, 'Alerts are off for this device.');
 
-async function submitAdminPhone() {
+const alertsTest = () =>
+  alertsDo(async () => {
+    const r = await api.pushTest();
+    alertDevices = r.devices;
+    if (!r.delivered) throw new Error('The test did not reach any device. Try turning alerts off and on again.');
+  }, 'Sent. It should arrive on your phone in a few seconds.');
+
+// ---- my solo stats ----
+// A solo round is reported when it ends. If the server cannot be reached the report waits in this browser (per
+// person) and is sent again later; the server counts each round once however often it is sent.
+let soloGameId = null;
+const newGameId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+const soloQueueKey = () => `big2.soloQueue.${user ? user.id : 'nobody'}`;
+function soloQueue() {
   try {
-    await api.admin.setPhone(adminPhoneTarget.id, $('adminPhoneInput').value);
-  } catch (err) {
-    $('adminPhoneErr').textContent = err.message;
-    return;
+    const q = JSON.parse(localStorage.getItem(soloQueueKey()) || '[]');
+    return Array.isArray(q) ? q : [];
+  } catch {
+    return [];
   }
-  $('adminPhoneDlg').close();
-  await refreshAdmin();
+}
+const saveSoloQueue = (q) => localStorage.setItem(soloQueueKey(), JSON.stringify(q.slice(-200)));
+let soloFlushing = false;
+
+function reportSoloResult(result) {
+  if (!user || !result.clientId) return;
+  saveSoloQueue([...soloQueue(), result]);
+  flushSoloResults();
 }
 
+async function flushSoloResults() {
+  if (soloFlushing || !user) return;
+  soloFlushing = true;
+  try {
+    for (let q = soloQueue(); q.length; q = soloQueue()) {
+      try {
+        await api.soloResult(q[0]);
+      } catch (err) {
+        // Out of reach, signed out, or told to slow down: keep it for later. Anything else is a report the
+        // server will never accept, so it is dropped rather than retried for ever.
+        if (!err.status || err.status >= 500 || err.status === 401 || err.status === 429) break;
+      }
+      saveSoloQueue(soloQueue().slice(1));
+    }
+  } finally {
+    soloFlushing = false;
+  }
+}
+
+const pct = (c) => (c.games ? `${Math.round((100 * c.wins) / c.games)}%` : '-');
+const perGame = (c) => (c.games ? signed(c.points / c.games, 1) : '-');
+
+function renderSoloStats(s) {
+  const body = $('soloStatsBody');
+  body.innerHTML = '';
+  const cell = (tr, text) => {
+    const td = document.createElement('td');
+    td.textContent = text;
+    tr.appendChild(td);
+  };
+  const section = (title) => {
+    const tr = document.createElement('tr');
+    tr.className = 'section';
+    const th = document.createElement('th');
+    th.colSpan = 6;
+    th.textContent = title;
+    tr.appendChild(th);
+    body.appendChild(tr);
+  };
+  const row = (label, c, total = false) => {
+    const tr = document.createElement('tr');
+    if (total) tr.className = 'total';
+    cell(tr, label);
+    cell(tr, c.games);
+    cell(tr, c.wins);
+    cell(tr, pct(c));
+    cell(tr, c.games ? signed(c.points, 0) : '-');
+    cell(tr, perGame(c));
+    body.appendChild(tr);
+  };
+  for (const size of [4, 3]) {
+    section(`${size} players`);
+    for (const l of ['easy', 'medium', 'hard']) row(LEVEL_LABEL[l], s.bySize[size][l]);
+    row(`All ${size}-player games`, s.bySize[size].all, true);
+  }
+  section('By level, both table sizes together');
+  for (const l of ['easy', 'medium', 'hard']) row(LEVEL_LABEL[l], s.byLevel[l]);
+  row('Overall', s.overall, true);
+  show('soloStatsEmpty', s.overall.games === 0);
+}
+
+async function openSoloStats() {
+  $('account').open = false;
+  await flushSoloResults(); // what finished a moment ago, or while offline, counts
+  try {
+    renderSoloStats(await api.soloStats());
+  } catch (err) {
+    if (err.status === 401) return sessionLost();
+    $('soloStatsEmpty').textContent = 'Your stats could not be loaded. Try again in a moment.';
+    show('soloStatsEmpty', true);
+  }
+  if (!$('soloStatsDlg').open) $('soloStatsDlg').showModal();
+}
+
+// ---- my password ----
 async function submitPassword() {
   $('pwErr').textContent = '';
   passwordChanging = true;
@@ -1567,31 +1867,54 @@ document.addEventListener('keydown', (e) => {
 });
 $('logoutBtn').addEventListener('click', async () => {
   try {
+    // This phone stops getting your alerts (it keeps its browser permission, so signing in again turns them back on).
+    const sub = DEVICE.canPush && (await currentSubscription());
+    if (sub) await api.pushUnsubscribe(sub.endpoint);
+  } catch {
+    /* signing out matters more */
+  }
+  try {
     await api.logout();
   } catch {
     /* already signed out */
   }
   location.reload(); // the sign-in page is all that is served now
 });
+$('viewBtn').addEventListener('click', () => {
+  localStorage.setItem('big2.view', adminUi() ? 'player' : 'admin');
+  $('account').open = false;
+  adminView = false;
+  show('adminBtn', adminUi());
+  renderViewBtn();
+  route();
+});
 $('adminBtn').addEventListener('click', () => {
   adminView = !adminView;
   route();
   if (adminView) refreshAdmin();
 });
-$('phoneBtn').addEventListener('click', openPhoneDialog);
-$('phoneSave').addEventListener('click', savePhone);
-$('phoneVerify').addEventListener('click', verifyPhoneCode);
-$('phoneResend').addEventListener('click', resendPhoneCode);
-$('smsToggle').addEventListener('change', toggleSms);
-$('phoneClose').addEventListener('click', () => $('phoneDlg').close());
-$('adminPhoneOk').addEventListener('click', submitAdminPhone);
-$('adminPhoneCancel').addEventListener('click', () => $('adminPhoneDlg').close());
-for (const [id, fn] of [
-  ['phoneInput', savePhone],
-  ['phoneCode', verifyPhoneCode],
-]) {
-  $(id).addEventListener('keydown', (e) => e.key === 'Enter' && fn());
-}
+$('alertsBtn').addEventListener('click', () => {
+  $('account').open = false;
+  openAlertsDialog();
+});
+$('alertsOn').addEventListener('click', alertsTurnOn);
+$('alertsOff').addEventListener('click', alertsTurnOff);
+$('alertsOffAll').addEventListener('click', alertsTurnOffAll);
+$('alertsTest').addEventListener('click', alertsTest);
+$('alertsClose').addEventListener('click', () => $('alertsDlg').close());
+$('alertsBannerOn').addEventListener('click', async () => {
+  await alertsTurnOn(); // straight from the tap, as the browser requires
+  if (alertsNow !== 'on') openAlertsDialog(); // it did not work: the dialog says why and what to do
+});
+$('alertsBannerLater').addEventListener('click', () => {
+  localStorage.setItem(ALERTS_DISMISSED, '1');
+  show('alertsBanner', false);
+});
+$('iosOk').addEventListener('click', () => $('iosDlg').close());
+$('soloStatsBtn').addEventListener('click', openSoloStats);
+$('endStats').addEventListener('click', openSoloStats);
+$('soloStatsClose').addEventListener('click', () => $('soloStatsDlg').close());
+$('soloStatsX').addEventListener('click', () => $('soloStatsDlg').close());
 $('passwordBtn').addEventListener('click', () => {
   $('pwErr').textContent = '';
   $('pwDlg').showModal();
@@ -1609,6 +1932,7 @@ $('createBtn').addEventListener('click', () =>
 $('startBtn').addEventListener('click', startOnlineRound);
 $('waitLeave').addEventListener('click', leaveTable);
 $('leaveBtn').addEventListener('click', backToLobby);
+$('forfeitBtn').addEventListener('click', forfeitSeat);
 $('endLeave').addEventListener('click', leaveTable);
 $('chatSend').addEventListener('click', sendChat);
 $('chatInput').addEventListener('keydown', (e) => e.key === 'Enter' && sendChat());
@@ -1630,19 +1954,11 @@ $('lbViewStats').addEventListener('click', () => {
   lbView = 'stats';
   refreshLeaderboard();
 });
-$('lbHuman').addEventListener('click', () => {
-  lbKind = 'human';
-  refreshLeaderboard();
-});
-$('lbAi').addEventListener('click', () => {
-  lbKind = 'ai';
-  refreshLeaderboard();
-});
 
 // The game is only served to a signed-in user, so this is a check that the session still holds,
 // not a login. Signed in, you land where you left off (online the first time).
 async function boot() {
-  renderRecord();
+  localStorage.removeItem('big2.record'); // the old count kept in this browser: stats live on the server now
   try {
     user = (await api.me()).user;
   } catch (err) {
@@ -1651,7 +1967,21 @@ async function boot() {
   if (user) {
     $('who').textContent = user.name;
     show('account', true);
+    flushSoloResults();
   }
+  try {
+    const config = await api.config();
+    devTables = !!config.devTables;
+    if (config.label) {
+      // A test copy says so on every page, so it cannot be mistaken for the real one.
+      $('siteLabel').textContent = config.label;
+      show('siteLabel', true);
+      document.title = `${config.label}: ${document.title}`;
+    }
+  } catch {
+    /* the production rules are the safe default */
+  }
+  for (const el of document.querySelectorAll('.dev-only')) el.hidden = !devTables;
   if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
   else startGame();
 }

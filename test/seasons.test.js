@@ -13,11 +13,12 @@ import {
   createSeason,
   updateSeason,
   deleteSeason,
+  endSeason,
   resolveSeason,
   recentAudit,
 } from '../server/db.js';
 import { createUser } from '../server/auth.js';
-import { boot, makeUser, nextPhone } from './support.js';
+import { boot, makeUser } from './support.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 const DAY = 86400000;
@@ -26,7 +27,7 @@ const PW = 'correct-horse-battery';
 async function fresh(names) {
   const db = openDb(':memory:');
   const ids = {};
-  for (const n of names) ids[n] = (await createUser(db, n, PW, { phone: nextPhone() })).id;
+  for (const n of names) ids[n] = (await createUser(db, n, PW)).id;
   deleteSeason(db, 1); // drop the automatic "Season 1" so the test controls every range
   return { db, ids };
 }
@@ -291,6 +292,81 @@ test('API: seasons and leaderboards are public; only admins change seasons; ever
     for (const a of ['create_season', 'update_season', 'delete_season']) assert.ok(actions.includes(a), a);
     assert.match(recentAudit(ctx.app.db).find((e) => e.action === 'delete_season').detail, /to /);
     assert.deepEqual(ctx.logs, []);
+  } finally {
+    await ctx.app.close();
+  }
+});
+
+test('having no season is a lasting choice: deleting every season is not undone by a restart', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'big2-noseason-'));
+  const file = path.join(dir, 'x.db');
+  try {
+    let db = openDb(file);
+    assert.equal(listSeasons(db).length, 1, 'a new database starts with Season 1');
+    deleteSeason(db, 1);
+    assert.equal(resolveSeason(db, 'current'), null);
+    db.close();
+    db = openDb(file);
+    assert.equal(listSeasons(db).length, 0, 'still none after reopening');
+    assert.equal(resolveSeason(db, 'current'), null);
+    assert.deepEqual(leaderboard(db, 'human'), { season: null, rows: [] }, 'no season, no rows, no crash');
+    createSeason(db, { name: 'Autumn', starts: T0, ends: null });
+    assert.equal(listSeasons(db).length, 1);
+    db.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ending a season: it stops now, the next can start, and the cases that make no sense are refused', async () => {
+  const { db } = await fresh([]);
+  const s = createSeason(db, { name: 'Open', starts: T0, ends: null });
+  const err = (fn, status) => assert.throws(fn, (e) => e.status === status);
+  assert.throws(
+    () => createSeason(db, { name: 'Next', starts: T0 + 5 * DAY, ends: null }),
+    (e) => e.status === 409 && /no end date.*End now/.test(e.message),
+    'the clash with an open-ended season says what to do',
+  );
+  const ended = endSeason(db, s.id, T0 + 3 * DAY);
+  assert.deepEqual(ended, { id: s.id, name: 'Open', starts: T0, ends: T0 + 3 * DAY });
+  assert.equal(resolveSeason(db, 'current', T0 + 3 * DAY - 1).id, s.id);
+  assert.equal(resolveSeason(db, 'current', T0 + 3 * DAY), null, 'from that moment there is no season running');
+  createSeason(db, { name: 'Next', starts: T0 + 3 * DAY, ends: T0 + 8 * DAY }); // touching is fine
+  err(() => endSeason(db, s.id, T0 + 4 * DAY), 409); // already over
+  err(() => endSeason(db, 999, T0), 404);
+  const later = createSeason(db, { name: 'Later', starts: T0 + 10 * DAY, ends: T0 + 11 * DAY });
+  err(() => endSeason(db, later.id, T0 + 5 * DAY), 409); // not started: delete it instead
+  err(() => endSeason(db, later.id, T0 + 10 * DAY), 409); // the very instant it starts
+  db.close();
+});
+
+test('API: an admin ends the running season at once; nobody else can; it is audited; then there is no table', async () => {
+  const ctx = await boot();
+  try {
+    const admin = await makeUser(ctx, 'boss', { isAdmin: true });
+    const pat = await makeUser(ctx, 'pat');
+    const list = (await admin.req('GET', '/api/seasons')).json.seasons;
+    assert.equal(list.length, 1);
+    const [season] = list;
+    assert.equal(season.status, 'active');
+    assert.equal((await pat.req('POST', `/api/admin/seasons/${season.id}/end`, {})).status, 403);
+    assert.equal((await admin.req('POST', '/api/admin/seasons/999/end', {})).status, 404);
+    const ended = await admin.req('POST', `/api/admin/seasons/${season.id}/end`, {});
+    assert.equal(ended.status, 200, JSON.stringify(ended.json));
+    assert.ok(ended.json.season.ends <= Date.now() && ended.json.season.ends > Date.now() - 5000);
+    assert.equal((await admin.req('GET', '/api/seasons')).json.seasons[0].status, 'past');
+    assert.equal((await admin.req('POST', `/api/admin/seasons/${season.id}/end`, {})).status, 409, 'already over');
+    assert.ok(
+      recentAudit(ctx.app.db, 10).some((e) => e.action === 'end_season' && e.target === season.name),
+      'ending a season is in the audit log',
+    );
+    assert.equal(ctx.app.lobby.table, null, 'with no season running there is no table to sit at');
+    // With no season the boards and the seasons list still answer, and a new season can be made at once.
+    assert.equal((await admin.req('GET', '/api/leaderboard')).status, 200);
+    assert.equal((await admin.req('GET', '/api/stats')).status, 200);
+    const made = await admin.req('POST', '/api/admin/seasons', { name: 'Fresh', starts: Date.now(), ends: null });
+    assert.equal(made.status, 201, JSON.stringify(made.json));
+    assert.equal(ctx.app.lobby.table.status, 'waiting', 'a season running now opens the table at once');
   } finally {
     await ctx.app.close();
   }

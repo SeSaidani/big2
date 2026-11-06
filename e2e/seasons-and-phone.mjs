@@ -1,5 +1,7 @@
 // Seasons admin UI, cumulative totals over two real games, and a phone-sized touch session.
-import { launch, newPage, sleep, HELPERS, STEP, outDir } from './lib.mjs';
+import { openDb, recordGame } from '../server/db.js';
+import { createUser } from '../server/auth.js';
+import { launch, newPage, sleep, HELPERS, outDir } from './lib.mjs';
 
 const OUT = outDir(process.argv[2]);
 const PORT = 8768;
@@ -13,27 +15,48 @@ const check = (label, ok, extra = '') => {
   if (!ok) throw new Error('check failed: ' + label);
 };
 
-const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e3-' });
-let P;
-
-async function playRound(page) {
-  const t0 = Date.now();
-  for (;;) {
-    const r = await page.ev(STEP);
-    if (r === 'over') return;
-    if (r === 'stuck') throw new Error('stuck: ' + (await page.text('status')));
-    if (Date.now() - t0 > 240000) throw new Error('round did not finish');
-    await sleep(70);
+const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e3-', extraEnv: { DEV_TABLES: '1' } });
+// Games are seeded before the server starts. Only games with no computer players count, so these are human
+// games (boss wins 30, then loses 12: 18 in total), plus one game with computers that must not count (boss +50).
+async function seedGames() {
+  const db = openDb(env.env.DB_FILE);
+  const boss = db.prepare("SELECT id FROM users WHERE name = 'boss'").get().id;
+  const others = [];
+  for (const name of ['bob', 'cat', 'dan']) {
+    others.push((await createUser(db, name, PW)).id);
   }
+  const t = Date.now() - 10 * 60 * 1000;
+  db.prepare('UPDATE seasons SET starts = ?').run(t - 1000); // Season 1 began just now; the games are a little older
+  const human = (k, deltas) =>
+    recordGame(db, {
+      started: t + k * 1000,
+      ended: t + k * 1000 + 500,
+      hasAi: false,
+      multiplier: 1,
+      seats: [boss, ...others].map((id, i) => ({ userId: id, cardsLeft: deltas[i] > 0 ? 0 : 5, delta: deltas[i] })),
+    });
+  human(1, [30, -10, -10, -10]);
+  human(2, [-12, 4, 4, 4]);
+  recordGame(db, {
+    started: t + 3000,
+    ended: t + 3500,
+    hasAi: true,
+    multiplier: 1,
+    seats: [
+      { userId: boss, cardsLeft: 0, delta: 50 },
+      { userId: null, cardsLeft: 5, delta: -20 },
+      { userId: null, cardsLeft: 5, delta: -20 },
+      { userId: null, cardsLeft: 5, delta: -10 },
+    ],
+  });
+  db.close();
 }
 
-const endPoints = async (page) =>
-  page.ev(
-    `[...document.querySelectorAll('#endHands .end-row')].map(r => [r.querySelector('.who').textContent, Number(r.querySelector('.pts').textContent.replace('−','-'))])`,
-  );
+let P;
 
 async function main() {
   console.log('CLI:', env.makeAdmin('boss', PW).stdout.trim());
+  await seedGames();
   await env.state.start();
   P = await newPage(CDP, 'P', OUT);
   await P.goto(BASE);
@@ -78,31 +101,15 @@ async function main() {
   );
   await P.shot('1-seasons-admin');
 
-  // ---------- two real games: cumulative totals ----------
-  await P.click('adminBtn');
-  await P.waitFor(`!document.getElementById('createRow').hidden`, 8000, 'create row');
-  await P.ev(`document.getElementById('newLevel').value='easy'; document.getElementById('createBtn').click()`);
-  await P.waitFor(`!document.getElementById('waitRoom').hidden`, 8000, 'waiting room');
-  await P.click('startBtn');
-  await P.waitFor(
-    `!document.getElementById('tableMain').hidden && document.querySelectorAll('#hand .card').length === 14`,
-    10000,
-    'game 1',
-  );
-  await playRound(P);
-  const g1 = (await endPoints(P)).find((r) => r[0] === 'You')[1];
-  await P.click('againBtn');
-  await P.waitFor(
-    `document.getElementById('overlay').hidden && document.querySelectorAll('#hand .card').length === 14`,
-    10000,
-    'game 2',
-  );
-  await playRound(P);
-  const g2 = (await endPoints(P)).find((r) => r[0] === 'You')[1];
-  console.log(`game 1: ${g1}, game 2: ${g2}`);
-  await P.click('endLeave');
+  // ---------- cumulative totals over the seeded human games ----------
+  await P.click('adminBtn'); // back to the lobby
   await P.waitFor(`!document.getElementById('lobbyHome').hidden`, 8000, 'lobby');
-  await P.click('lbAi');
+  check(
+    'there is no computer-players board to pick',
+    await P.ev(`!document.getElementById('lbAi') && !document.getElementById('lbHuman')`),
+  );
+  const g1 = 30;
+  const g2 = -12;
   await P.waitFor(
     `document.querySelector('#lbBody td:nth-child(2)') && document.querySelector('#lbBody td:nth-child(2)').textContent === 'boss'`,
     8000,
@@ -110,13 +117,14 @@ async function main() {
   );
   const row = await P.ev(`[...document.querySelector('#lbBody tr').children].map(c => c.textContent)`);
   check(
-    'the season board shows the running total across both games',
+    'the season board shows the running total across both human games, and not the game with computers (+50)',
     row[2] === '2' && Number(row[5]) === g1 + g2,
     JSON.stringify(row),
   );
   check(
     'win % and per-game are shown beside the total',
-    row[4].endsWith('%') && Math.abs(Number(row[6]) - (g1 + g2) / 2) < 0.01,
+    row[4] === '50%' && Math.abs(Number(row[6]) - (g1 + g2) / 2) < 0.01,
+    JSON.stringify(row),
   );
 
   await P.ev(
@@ -146,13 +154,25 @@ async function main() {
   await P.shot('2-leaderboard-desktop');
 
   // ---------- phone: touch ----------
-  await P.ev(`document.getElementById('lbAi').click()`);
   await P.click('adminBtn');
   await P.click('adminBtn');
   await P.waitFor(`!document.getElementById('createRow').hidden`, 8000, 'create row');
   await P.phone(390, 844);
   await sleep(300);
   await P.shot('3-phone-lobby');
+  // The round buttons stay round on a phone (the 44px touch height used to stretch them into ovals).
+  const round = (id) =>
+    P.ev(
+      `(() => { const r = document.getElementById('${id}').getBoundingClientRect(); return { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 }; })()`,
+    );
+  const help = await round('helpBtn');
+  check('on a phone the ? button is a circle, at least 44px', help.w === help.h && help.w >= 44, JSON.stringify(help));
+  await P.click('helpBtn');
+  await P.waitFor(`document.getElementById('helpDlg').open`, 3000, 'help dialog');
+  const x = await round('helpX');
+  check('and so is the × that closes a dialog', x.w === x.h && x.w >= 44, JSON.stringify(x));
+  await P.ev(`document.getElementById('helpDlg').close()`);
+  check('the top bar still fits the phone width', await P.ev(`document.documentElement.scrollWidth <= innerWidth + 1`));
   await P.ev(`document.getElementById('newLevel').value='easy'; document.getElementById('createBtn').click()`);
   await P.waitFor(`!document.getElementById('waitRoom').hidden`, 8000, 'waiting room (phone)');
   await P.click('startBtn');

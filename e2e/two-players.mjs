@@ -8,7 +8,7 @@ const ADMIN_PW = 'admin-password-123';
 const TEMP_PW = 'temporary-pass-1';
 const NEW_PW = 'alice-new-password-9';
 
-const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e2-' });
+const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e2-', extraEnv: { DEV_TABLES: '1' } });
 console.log('CLI:', env.makeAdmin('boss', ADMIN_PW).stdout.trim());
 
 let moves = 0;
@@ -41,6 +41,7 @@ async function main() {
   // --- admin signs in and creates a user in the UI ---
   await A.goto(BASE);
   await A.signIn('boss', ADMIN_PW);
+  await A.waitFor(`!document.getElementById('adminBtn').hidden`, 8000, 'the Admin button'); // drawn just after the lobby
   check('admin signs in and sees the Admin button', await A.visible('adminBtn'));
   check(
     'the account menu shows the name and starts closed',
@@ -48,9 +49,9 @@ async function main() {
   );
   await A.click('who');
   check(
-    'the account menu opens with Admin, Phone, Password and Log out',
+    'the account menu opens with Admin, Turn alerts, Password and Log out',
     await A.ev(
-      `document.getElementById('account').open && ['adminBtn', 'phoneBtn', 'passwordBtn', 'logoutBtn'].every((id) => document.getElementById(id).closest('.menu') && !document.getElementById(id).hidden)`,
+      `document.getElementById('account').open && ['adminBtn', 'alertsBtn', 'passwordBtn', 'logoutBtn'].every((id) => document.getElementById(id).closest('.menu') && !document.getElementById(id).hidden)`,
     ),
   );
   await A.ev(`document.body.click()`);
@@ -79,7 +80,7 @@ async function main() {
   );
   check('registration is closed by default', (await A.text('regState')).startsWith('Closed'));
   await A.ev(
-    `document.getElementById('newUserName').value='alice'; document.getElementById('newUserPw').value=${JSON.stringify(TEMP_PW)}; document.getElementById('newUserPhone').value='+447700900002'; document.getElementById('createUserBtn').click()`,
+    `document.getElementById('newUserName').value='alice'; document.getElementById('newUserPw').value=${JSON.stringify(TEMP_PW)}; document.getElementById('createUserBtn').click()`,
   );
   await A.waitFor(
     `[...document.querySelectorAll('#usersBody tr')].some(r => r.children[0].textContent === 'alice')`,
@@ -242,51 +243,33 @@ async function main() {
   check('only the host gets "Play again"', (await A.visible('againBtn')) && !(await B.visible('againBtn')));
   await A.shot('4-result');
 
-  // --- leaderboard: a game with computer players ---
+  // --- leaderboard: a game with computer players does not count ---
   await A.click('endLeave');
   await A.waitFor(`!document.getElementById('lobbyHome').hidden`, 8000, 'A back in the lobby');
-  await A.click('lbAi');
-  await A.waitFor(
-    `[...document.querySelectorAll('#lbBody tr')].map(r => r.children[1] && r.children[1].textContent).includes('boss')`,
-    8000,
-    'leaderboard row',
-  );
-  const names = await A.ev(
-    `[...document.querySelectorAll('#lbBody tr')].map(r => r.children[1] && r.children[1].textContent)`,
-  );
   check(
-    'both humans are on the computer-players leaderboard',
-    names.includes('boss') && names.includes('alice'),
-    names.join(','),
+    'there is no computer-players board to pick',
+    await A.ev(`!document.getElementById('lbAi') && !document.getElementById('lbHuman')`),
   );
+  await A.waitFor(`document.getElementById('lbBody').textContent.includes('No games yet')`, 8000, 'an empty board');
+  check('the game with computer players is not on the leaderboard', true, await A.text('lbBody'));
   await A.shot('5-leaderboard');
 
-  // Luck & skill: the same two players with one game each, below the 10-game minimum, so no figures yet.
+  // Luck & skill leaves that game out too: it had computer players.
   await A.click('lbViewStats');
   await A.waitFor(
-    `[...document.querySelectorAll('#lsBody tr')].some(r => r.children[0] && r.children[0].textContent === 'boss')`,
+    `document.getElementById('lsBody').textContent.includes('No games with their deals saved yet')`,
     8000,
-    'luck and skill rows',
-  );
-  const ls = await A.ev(
-    `[...document.querySelectorAll('#lsBody tr')].map(r => [...r.children].map(c => c.textContent))`,
+    'an empty Luck & skill view',
   );
   check(
-    'Luck & skill lists both humans with one game and says how many more are needed',
-    ['boss', 'alice'].every((n) => ls.some((r) => r[0] === n && r[1] === '1' && r[6] === 'needs 9 more')),
-    JSON.stringify(ls),
-  );
-  check(
-    'the standings table is out of the way while it shows',
+    'Luck & skill is empty too, and the standings table is out of the way while it shows',
     await A.ev(`document.getElementById('lbStandings').hidden && !document.getElementById('lsBox').hidden`),
   );
-  const priced = await A.ev(`fetch('/api/stats?kind=ai').then(r => r.json())`);
+  const priced = await A.ev(`fetch('/api/stats').then(r => r.json())`);
   check(
-    'the server priced that game: real win chances, nothing left waiting',
-    priced.pending === 0 &&
-      priced.rows.length === 2 &&
-      priced.rows.every((r) => r.expWins > 0 && r.expWins < 1 && r.games === 1 && r.ready === false),
-    JSON.stringify(priced.rows.map((r) => [r.name, r.expWins.toFixed(3)])),
+    'the server neither counted nor priced the game with computer players',
+    priced.rows.length === 0 && priced.pending === 0,
+    JSON.stringify(priced.rows),
   );
   await A.shot('5b-luck-skill');
   await A.click('lbViewStandings');
@@ -345,10 +328,11 @@ async function main() {
     'admin stats show the cancelled game',
   );
   check('an admin cancelled the game for everyone, and it is recorded as cancelled', true, await A.text('adminStats'));
-  const lbAfter = await A.ev(
-    `fetch('/api/leaderboard?kind=ai').then(r => r.json()).then(j => j.rows.map(r => r.name + ':' + r.games).join(','))`,
+  const lbAfter = await A.ev(`fetch('/api/leaderboard').then(r => r.json()).then(j => j.rows.length)`);
+  check(
+    'neither the finished game nor the cancelled one counted for anyone (both had computer players)',
+    lbAfter === 0,
   );
-  check('the cancelled game did not count toward anyone', /boss:1/.test(lbAfter) && /alice:1/.test(lbAfter), lbAfter);
   await A.shot('6-admin-after-cancel');
 
   // --- a third game on a phone-sized screen, to look at the layout ---

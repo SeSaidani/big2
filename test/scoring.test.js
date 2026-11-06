@@ -4,7 +4,7 @@ import { mulberry32 } from '../src/cards.js';
 import { classify } from '../src/hands.js';
 import { newGame, applyMove, autoSkip, observe } from '../src/game.js';
 import { chooseMove } from '../src/ai/agents.js';
-import { rateFor, scoreRound, isBonusPlay } from '../src/scoring.js';
+import { rateFor, scoreRound, isBonusPlay, forfeitPenalty } from '../src/scoring.js';
 
 const ids = (n) => Array.from({ length: n }, (_, i) => i);
 const finished = (winner, lefts, play = [51]) => {
@@ -70,4 +70,17 @@ test('real games always score zero-sum with the winner positive', () => {
     assert.ok(r.delta[s.winner] > 0);
     r.delta.forEach((d, p) => p === s.winner || assert.ok(d < 0));
   }
+});
+
+test('walking out of a game costs the most a loser can pay in a round', () => {
+  // 4 players: the most cards a loser holds is a whole hand of 14, at the top rate of 4.
+  assert.equal(forfeitPenalty(4), 14 * rateFor(14, 4));
+  assert.equal(forfeitPenalty(4), 56);
+  // 3 players: a loser can hold 20 (18 and both spares).
+  assert.equal(forfeitPenalty(3), 20 * rateFor(20, 3));
+  assert.equal(forfeitPenalty(3), 80);
+  // It is exactly what a loser who never played would pay, so it cannot be beaten by any real round.
+  const nobodyPlayed = scoreRound(finished(0, [0, 14, 14, 14]));
+  assert.equal(-nobodyPlayed.delta[1], forfeitPenalty(4));
+  assert.throws(() => forfeitPenalty(5));
 });

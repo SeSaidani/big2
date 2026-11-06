@@ -34,12 +34,13 @@ const loadModel = (players) => {
 const MODELS = { 3: loadModel(3), 4: loadModel(4) };
 export const modelIds = () => ({ 3: MODELS[3].id, 4: MODELS[4].id });
 
+// Only games with no computer players count (as on the leaderboard), so only those are priced.
 // Prices the finished games that have a saved deal but no numbers from the current model yet.
 // Returns how many such games are still waiting afterwards.
 export function ensureExpectations(db, { limit = BATCH, log = () => {} } = {}) {
   const todo = db.prepare(`
     SELECT g.id AS id, g.players AS players FROM games g
-    WHERE g.status = 'finished' AND g.players = ?
+    WHERE g.status = 'finished' AND g.has_ai = 0 AND g.players = ?
       AND EXISTS (SELECT 1 FROM game_deals d WHERE d.game_id = g.id)
       AND NOT EXISTS (SELECT 1 FROM game_expectation e WHERE e.game_id = g.id AND e.model = ?)
     ORDER BY g.id LIMIT ?`);
@@ -76,7 +77,7 @@ function pending(db) {
     n += db
       .prepare(
         `SELECT COUNT(*) AS n FROM games g
-         WHERE g.status = 'finished' AND g.players = ?
+         WHERE g.status = 'finished' AND g.has_ai = 0 AND g.players = ?
            AND EXISTS (SELECT 1 FROM game_deals d WHERE d.game_id = g.id)
            AND NOT EXISTS (SELECT 1 FROM game_expectation e WHERE e.game_id = g.id AND e.model = ?)`,
       )
@@ -85,13 +86,12 @@ function pending(db) {
   return n;
 }
 
-// kind: 'human' (games with only people) or 'ai' (games with computer players), as for the leaderboard.
-export function luckAndSkill(db, kind, { season = 'current', now = Date.now(), minGames = MIN_GAMES, log } = {}) {
+export function luckAndSkill(db, { season = 'current', now = Date.now(), minGames = MIN_GAMES, log } = {}) {
   const s = resolveSeason(db, season, now);
   if (!s) return { season: null, rows: [], minGames, pending: 0 };
   const stillPending = ensureExpectations(db, { log });
-  const where = `g.has_ai = ? AND g.status = 'finished' AND g.ended >= ? AND g.ended < ?`;
-  const args = [kind === 'ai' ? 1 : 0, s.starts ?? FAR_PAST, s.ends ?? FAR_FUTURE];
+  const where = `g.has_ai = 0 AND g.status = 'finished' AND g.ended >= ? AND g.ended < ?`;
+  const args = [s.starts ?? FAR_PAST, s.ends ?? FAR_FUTURE];
 
   const played = new Map(
     db

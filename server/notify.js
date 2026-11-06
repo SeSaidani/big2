@@ -1,102 +1,97 @@
-// "It is your turn" texts. The table tells us when the turn passes to a
-// person; we wait a little (they may be about to move), re-check that it is
-// still their turn and that they are not already looking at the game, then
-// text them once, politely: a per-person cooldown and a daily cap, kept in the
-// database so a restart cannot cause a second text. A text carries a link and
-// never any cards.
+// "It is your turn" alerts, as push notifications to the person's devices. At most two per turn, and
+// only if the person has not played:
+//   1. firstAfterMs (default 20 minutes) after the turn passed to them, and
+//   2. secondAfterMs (default 24 hours) after it passed, if it is still their turn.
+// A person who moves in time costs nothing. Nothing depends on whether a page is open.
 //
-// A failing provider never touches the game: errors are logged (with the
-// number masked) and swallowed. "Opted out" from the carrier switches texting
-// off for that person until they set their number again.
+// The table tells us when a turn began (`since`, saved with the game, so it survives a restart:
+// resume() schedules again from the saved time). Whether an alert has already gone out for this
+// turn is read from the database (alerts logged since the turn began), so a restart or a
+// repeated check can never send one twice. A safety cap per person per 24 hours remains.
+// An alert says it is your turn and never shows any cards.
+//
+// A failing push service never touches the game: failures are logged and swallowed.
 
-import { maskPhone } from './phone-format.js';
-import { textingRow, blockSms, logSms, lastSmsAt, countSms } from './phones.js';
+import { countPush, lastPushAt, logPush, listSubscriptions } from './push-store.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_TURN_ALERTS = 2;
 
 export class TurnNotifier {
-  // config.when: 'offline' (only if they have no open page) or 'always'
-  constructor({ db, provider, isOnline, config = {}, log = () => {} }) {
+  // pusher: { canSend, sendToUser(userId, message) -> { devices, delivered, removed } }
+  constructor({ db, pusher, config = {}, log = () => {} }) {
     this.db = db;
-    this.provider = provider;
-    this.isOnline = isOnline;
+    this.pusher = pusher;
     this.log = log;
     this.config = {
-      delayMs: 20_000,
-      cooldownMs: 10 * 60_000,
-      maxPerDay: 12,
-      when: 'offline',
-      baseUrl: '',
-      requireVerified: true,
-      retryDelayMs: 5000,
+      firstAfterMs: 20 * 60_000,
+      secondAfterMs: DAY_MS,
+      maxPerDay: 6,
       now: Date.now,
       ...config,
     };
-    this.timers = new Map(); // userId -> pending timer
+    this.timers = new Map(); // userId -> [timers] for the pending turn
     this.inflight = new Set();
   }
 
-  // The turn has just passed to `userId`. `stillTheirTurn()` is asked again when
-  // the delay is up: it must be false if anything has happened since.
-  schedule(userId, stillTheirTurn) {
-    if (!this.provider.canSend) return;
-    clearTimeout(this.timers.get(userId));
-    const timer = setTimeout(() => {
-      this.timers.delete(userId);
-      if (!stillTheirTurn()) return;
-      this.consider(userId).catch((err) => this.log('turn text failed unexpectedly', err));
-    }, this.config.delayMs);
-    timer.unref?.();
-    this.timers.set(userId, timer);
+  // The turn passed to `userId` at time `since`. `stillTheirTurn()` is asked again when each
+  // time is up: it must be false if anything has happened since.
+  schedule(userId, since, stillTheirTurn) {
+    if (!this.pusher.canSend) return;
+    this.#clear(userId);
+    const c = this.config;
+    const timers = [c.firstAfterMs, c.secondAfterMs].map((after) => {
+      const timer = setTimeout(
+        () => {
+          if (!stillTheirTurn()) return;
+          this.consider(userId, since).catch((err) => this.log('turn alert failed unexpectedly', err));
+        },
+        Math.max(0, since + after - c.now()),
+      );
+      timer.unref?.();
+      return timer;
+    });
+    this.timers.set(userId, timers);
   }
 
   stop() {
-    for (const t of this.timers.values()) clearTimeout(t);
-    this.timers.clear();
+    for (const id of [...this.timers.keys()]) this.#clear(id);
+  }
+
+  #clear(userId) {
+    for (const t of this.timers.get(userId) ?? []) clearTimeout(t);
+    this.timers.delete(userId);
   }
 
   // Decides and (if allowed) sends. Returns why, so tests can assert on it.
-  async consider(userId) {
-    if (!this.provider.canSend) return 'no-provider';
+  async consider(userId, since) {
+    if (!this.pusher.canSend) return 'no-pusher';
     if (this.inflight.has(userId)) return 'busy';
     const c = this.config;
-    const u = textingRow(this.db, userId);
-    if (!u || !u.phone) return 'no-phone';
-    if (!u.enabled) return 'switched-off';
-    if (u.blocked) return 'blocked';
-    if (c.requireVerified && !u.verified) return 'unverified';
-    if (c.when === 'offline' && this.isOnline(userId)) return 'online';
+    if (!listSubscriptions(this.db, userId).length) return 'no-device';
+
     const now = c.now();
-    const last = lastSmsAt(this.db, userId, 'turn');
-    if (last !== null && now - last < c.cooldownMs) return 'cooldown';
-    if (countSms(this.db, userId, 'turn', now - DAY_MS) >= c.maxPerDay) return 'daily-cap';
+    const elapsed = now - since;
+    const sent = countPush(this.db, userId, since); // alerts for this turn
+    if (sent >= MAX_TURN_ALERTS) return 'enough';
+    if (sent === 0) {
+      if (elapsed < c.firstAfterMs) return 'too-soon';
+    } else {
+      if (elapsed < c.secondAfterMs) return 'too-soon';
+      // After a long outage both times pass at once: one alert catches up, not two in a row.
+      if (lastPushAt(this.db, userId) >= since + c.secondAfterMs) return 'caught-up';
+    }
+    if (countPush(this.db, userId, now - DAY_MS) >= c.maxPerDay) return 'daily-cap';
 
     this.inflight.add(userId);
     try {
-      const body = c.baseUrl ? `Big Two: it's your turn. ${c.baseUrl}` : "Big Two: it's your turn.";
-      const ok = await this.#sendWithRetry(userId, u.phone, body);
-      logSms(this.db, userId, 'turn', ok, c.now());
+      const body = sent === 0 ? "It's your turn." : "It's still your turn.";
+      const r = await this.pusher.sendToUser(userId, { title: 'Big Two', body, url: '/', tag: 'turn' });
+      const ok = r.delivered > 0;
+      logPush(this.db, userId, ok, now);
       return ok ? 'sent' : 'failed';
     } finally {
       this.inflight.delete(userId);
     }
-  }
-
-  async #sendWithRetry(userId, phone, body) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        await this.provider.send({ to: phone, body });
-        return true;
-      } catch (err) {
-        this.log(`turn text to ${maskPhone(phone)} failed (attempt ${attempt}): ${err.message}`);
-        if (err.optedOut) {
-          blockSms(this.db, userId);
-          return false;
-        }
-        if (!err.retryable || attempt === 2) return false;
-        await new Promise((r) => setTimeout(r, this.config.retryDelayMs));
-      }
-    }
-    return false;
   }
 }

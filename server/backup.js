@@ -7,7 +7,7 @@
 // Each run writes <directory>/big2-<timestamp>.db, checks the copy with
 // SQLite's integrity check BEFORE it is kept, refreshes <directory>/latest.db,
 // and deletes all but the newest `keep` (default 14) timestamped backups.
-// Backups hold password hashes and phone numbers: the directory is private.
+// Backups hold password hashes and the keys that sign turn alerts: the directory is private.
 
 import fs from 'node:fs';
 import path from 'node:path';

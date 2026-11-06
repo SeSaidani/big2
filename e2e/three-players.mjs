@@ -7,7 +7,7 @@ const CDP = 9337;
 const BASE = `http://127.0.0.1:${PORT}/`;
 const ADMIN_PW = 'admin-password-123';
 
-const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e3-' });
+const env = await launch({ port: PORT, cdp: CDP, tmpPrefix: 'big2-e2e3-', extraEnv: { DEV_TABLES: '1' } });
 console.log('CLI:', env.makeAdmin('boss', ADMIN_PW).stdout.trim());
 
 const results = [];

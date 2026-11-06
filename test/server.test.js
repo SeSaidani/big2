@@ -19,7 +19,6 @@ import {
   checkNoLeak,
   driveEasy,
   seatPlayers,
-  nextPhone,
 } from './support.js';
 
 const tableOf = (ctx) => ctx.app.lobby.table;
@@ -40,7 +39,7 @@ test('accounts: registration is closed by default; opened by the admin it works'
   try {
     const anon = new Client(ctx.base);
     assert.equal((await anon.req('GET', '/api/config')).json.registrationOpen, false);
-    const closed = await anon.req('POST', '/api/register', { name: 'Alice', password: PASSWORD, phone: nextPhone() });
+    const closed = await anon.req('POST', '/api/register', { name: 'Alice', password: PASSWORD });
     assert.equal(closed.status, 403);
 
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
@@ -48,10 +47,7 @@ test('accounts: registration is closed by default; opened by the admin it works'
     assert.equal((await anon.req('GET', '/api/config')).json.registrationOpen, true);
 
     const a = new Client(ctx.base);
-    assert.equal(
-      (await a.req('POST', '/api/register', { name: 'Alice', password: PASSWORD, phone: nextPhone() })).status,
-      201,
-    );
+    assert.equal((await a.req('POST', '/api/register', { name: 'Alice', password: PASSWORD })).status, 201);
     assert.equal((await a.req('GET', '/api/me')).json.user.name, 'Alice');
     assert.equal((await a.req('GET', '/api/me')).json.user.isAdmin, false);
     assert.equal(
@@ -59,15 +55,14 @@ test('accounts: registration is closed by default; opened by the admin it works'
         await new Client(ctx.base).req('POST', '/api/register', {
           name: 'alice',
           password: PASSWORD,
-          phone: nextPhone(),
         })
       ).status,
       409,
     );
     for (const bad of [
-      { name: 'x', password: PASSWORD, phone: nextPhone() },
+      { name: 'x', password: PASSWORD },
       { name: 'ok_name', password: 'short' },
-      { name: 'bad name!', password: PASSWORD, phone: nextPhone() },
+      { name: 'bad name!', password: PASSWORD },
     ]) {
       assert.equal((await new Client(ctx.base).req('POST', '/api/register', bad)).status, 400);
     }
@@ -76,7 +71,6 @@ test('accounts: registration is closed by default; opened by the admin it works'
     await sneaky.req('POST', '/api/register', {
       name: 'sneaky',
       password: PASSWORD,
-      phone: nextPhone(),
       isAdmin: true,
     });
     assert.equal((await sneaky.req('GET', '/api/me')).json.user.isAdmin, false);
@@ -202,12 +196,11 @@ test('one account cannot hold unlimited event streams open', async () => {
 });
 
 test('only an admin creates a game, and only one game exists at a time', async () => {
-  const ctx = await boot();
+  const ctx = await boot({ devTables: true });
   try {
     const admin = await makeUser(ctx, 'boss', { isAdmin: true });
     const pleb = await makeUser(ctx, 'pleb');
     assert.equal((await pleb.req('POST', '/api/game', { aiLevel: 'easy' })).status, 403);
-    assert.equal((await admin.req('POST', '/api/game', { aiLevel: 'nonsense' })).status, 400);
     assert.equal((await admin.req('POST', '/api/game', { aiLevel: 'easy' })).status, 201);
     // A second game, from anyone, is refused while one exists.
     assert.equal((await admin.req('POST', '/api/game', { aiLevel: 'easy' })).status, 409);
@@ -225,7 +218,7 @@ test('only an admin creates a game, and only one game exists at a time', async (
 });
 
 test('four humans play a full game: no view leaks a hand, result is zero-sum and saved', async () => {
-  const ctx = await boot({ rng: mulberry32(7) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(7) });
   try {
     const clients = await seatPlayers(ctx, 'full');
     for (const c of clients) driveEasy(c, c.ev, () => tableOf(ctx).game);
@@ -248,7 +241,8 @@ test('four humans play a full game: no view leaks a hand, result is zero-sum and
     assert.equal(ctx.app.db.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished'").get().n, 1);
     assert.equal(ctx.app.db.prepare('SELECT SUM(delta) AS s FROM results').get().s, 0);
     assert.equal((await clients[0].req('GET', '/api/leaderboard?kind=human')).json.rows.length, 4);
-    assert.equal((await clients[0].req('GET', '/api/leaderboard?kind=ai')).json.rows.length, 0);
+    // There is no computer board: asking for one gets the one board, and a game with computers never joins it.
+    assert.equal((await clients[0].req('GET', '/api/leaderboard?kind=ai')).json.rows.length, 4);
     assert.deepEqual(ctx.logs, []);
 
     // A finished round does not block the next game: an admin simply creates one.
@@ -260,7 +254,7 @@ test('four humans play a full game: no view leaks a hand, result is zero-sum and
 });
 
 test('three humans at a table of three play a full game: view and result have three seats', async () => {
-  const ctx = await boot({ rng: mulberry32(11) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(11) });
   try {
     const clients = await seatPlayers(ctx, 'tri', 3, 'easy', 3);
     for (const c of clients) driveEasy(c, c.ev, () => tableOf(ctx).game);
@@ -289,9 +283,10 @@ test('three humans at a table of three play a full game: view and result have th
 });
 
 test('a game has 3 or 4 seats and nothing else', async () => {
-  const ctx = await boot({ rng: mulberry32(12) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(12) });
   try {
     const admin = await makeUser(ctx, 'seatadmin', { isAdmin: true });
+    assert.equal((await admin.req('POST', '/api/game', { aiLevel: 'nonsense' })).status, 400, 'an unknown AI level');
     for (const seats of [2, 5, 0, 'x']) {
       const r = await admin.req('POST', '/api/game', { aiLevel: 'easy', seats });
       assert.equal(r.status, 400, `seats=${seats}`);
@@ -303,8 +298,47 @@ test('a game has 3 or 4 seats and nothing else', async () => {
   }
 });
 
+test('a game with computer players is saved, but it is on no board and not in Luck & skill', async () => {
+  const ctx = await boot({ devTables: true, rng: mulberry32(33) });
+  try {
+    const clients = await seatPlayers(ctx, 'cpu', 1);
+    driveEasy(clients[0], clients[0].ev, () => tableOf(ctx).game);
+    assert.equal((await clients[0].req('POST', '/api/game/start')).status, 200);
+    const done = await clients[0].ev.waitFor(isDone, 30000);
+    assert.deepEqual(clients[0].errors, []);
+    assert.equal(done.data.result.hasAi, true);
+    assert.equal(done.data.result.saved, true);
+    assertRecordReplays(ctx, 4, done.data.result.winner); // it is still saved in full
+
+    const db = ctx.app.db;
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM games WHERE status = 'finished' AND has_ai = 1").get().n, 1);
+    const lb = await clients[0].req('GET', '/api/leaderboard?season=current');
+    assert.deepEqual(lb.json.rows, []);
+    const st = await clients[0].req('GET', '/api/stats?season=current');
+    assert.deepEqual(st.json.rows, []);
+    assert.equal(st.json.pending, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_expectation').get().n, 0, 'it was not priced');
+  } finally {
+    await ctx.app.close();
+  }
+});
+
+test('the server says whether the development table rules are on, and they are off by default', async () => {
+  for (const [opts, expected] of [
+    [{}, false],
+    [{ devTables: true }, true],
+  ]) {
+    const ctx = await boot(opts);
+    try {
+      assert.equal((await new Client(ctx.base).req('GET', '/api/config')).json.devTables, expected);
+    } finally {
+      await ctx.app.close();
+    }
+  }
+});
+
 test('rejected moves change nothing; join rules; reconnect resumes the current view', async () => {
-  const ctx = await boot({ rng: mulberry32(11) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(11) });
   try {
     const clients = await seatPlayers(ctx, 'rej');
     const table = tableOf(ctx);
@@ -353,7 +387,7 @@ test('rejected moves change nothing; join rules; reconnect resumes the current v
 });
 
 test('an away player holds the game: no timer, no auto-play', async () => {
-  const ctx = await boot({ rng: mulberry32(5) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(5) });
   try {
     const admin = await makeUser(ctx, 'solo', { isAdmin: true });
     await admin.req('POST', '/api/game', { aiLevel: 'easy' });
@@ -378,7 +412,7 @@ test('an away player holds the game: no timer, no auto-play', async () => {
 });
 
 test('leaving: waiting room frees the seat; a started game holds it', async () => {
-  const ctx = await boot({ rng: mulberry32(3) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(3) });
   try {
     const clients = await seatPlayers(ctx, 'lv', 3);
     const table = tableOf(ctx);
@@ -402,7 +436,7 @@ test('leaving: waiting room frees the seat; a started game holds it', async () =
 });
 
 test('the whole table disappears when the last person leaves the waiting room', async () => {
-  const ctx = await boot();
+  const ctx = await boot({ devTables: true });
   try {
     const admin = await makeUser(ctx, 'solo', { isAdmin: true });
     await admin.req('POST', '/api/game', { aiLevel: 'easy' });
@@ -416,7 +450,7 @@ test('the whole table disappears when the last person leaves the waiting room', 
 });
 
 test('an admin cancel ends a running game, unscored; only an admin can do it', async () => {
-  const ctx = await boot({ rng: mulberry32(9) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(9) });
   try {
     const clients = await seatPlayers(ctx, 'cx');
     await clients[0].req('POST', '/api/game/start');
@@ -453,7 +487,7 @@ test('an admin cancel ends a running game, unscored; only an admin can do it', a
 });
 
 test('chat: needs two humans, is validated and rate limited, and history reaches reconnecting clients', async () => {
-  const ctx = await boot({ rng: mulberry32(2) });
+  const ctx = await boot({ devTables: true, rng: mulberry32(2) });
   try {
     const clients = await seatPlayers(ctx, 'ch', 1);
     const [a] = clients;
@@ -517,7 +551,7 @@ test('chat: needs two humans, is validated and rate limited, and history reaches
 test('a running game survives a server restart and carries on to a scored finish', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'big2-persist-'));
   const dbFile = path.join(dir, 'test.db');
-  let ctx = await boot({ dbFile, rng: mulberry32(21) });
+  let ctx = await boot({ devTables: true, dbFile, rng: mulberry32(21) });
   try {
     const admin = await makeUser(ctx, 'keeper', { isAdmin: true });
     await admin.req('POST', '/api/game', { aiLevel: 'easy' });
@@ -533,20 +567,28 @@ test('a running game survives a server restart and carries on to a scored finish
     }
     assert.equal(table.status, 'playing');
     await sleep(50);
-    const before = { game: JSON.stringify(table.game), version: table.version, id: table.id, chat: table.chat };
+    const before = {
+      game: JSON.stringify(table.game),
+      version: table.version,
+      id: table.id,
+      chat: table.chat,
+      turnSince: table.turnSince,
+    };
     const cookie = admin.cookie;
     await ctx.app.close(); // a restart: the live game must NOT be cancelled or lost
     const peek = openDb(dbFile);
     assert.equal(loadLive(peek).id, before.id, 'the live game is still saved after shutdown');
     peek.close();
 
-    ctx = await boot({ dbFile, rng: mulberry32(21) });
+    ctx = await boot({ devTables: true, dbFile, rng: mulberry32(21) });
     table = ctx.app.lobby.table;
     assert.ok(table, 'the table was restored');
     assert.equal(table.id, before.id);
     assert.equal(table.status, 'playing');
     assert.equal(JSON.stringify(table.game), before.game);
     assert.ok(table.version > before.version);
+    assert.ok(before.turnSince > 0);
+    assert.equal(table.turnSince, before.turnSince, 'when the turn began is restored, not reset');
     assert.equal(
       ctx.app.db.prepare('SELECT COUNT(*) AS n FROM games').get().n,
       0,
@@ -572,5 +614,37 @@ test('a running game survives a server restart and carries on to a scored finish
   } finally {
     await ctx.app.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a test copy of the site says what it is, on the sign-in page, in the config and in the installed app name', async () => {
+  const plain = await boot();
+  try {
+    assert.equal((await new Client(plain.base).req('GET', '/api/config')).json.label, '');
+    const m = await (await fetch(`${plain.base}/manifest.webmanifest`)).json();
+    assert.equal(m.name, 'Big Two · Jokers Wild', 'the real site keeps its own name');
+  } finally {
+    await plain.app.close();
+  }
+  const staging = await boot({ label: 'Staging' });
+  try {
+    assert.equal((await new Client(staging.base).req('GET', '/api/config')).json.label, 'Staging');
+    const m = await (await fetch(`${staging.base}/manifest.webmanifest`)).json();
+    assert.equal(m.name, 'Big Two · Jokers Wild (Staging)');
+    assert.match(m.short_name, /^Big Two \(Staging\)$/);
+    assert.ok(m.icons.length >= 2, 'the rest of the manifest is untouched');
+    const page = await (await fetch(`${staging.base}/`)).text();
+    assert.ok(page.includes('id="siteLabel"'), 'the sign-in page has the badge');
+  } finally {
+    await staging.app.close();
+  }
+  // A label is plain words only: anything else is ignored, never put into a page or a file.
+  for (const bad of ['<script>alert(1)</script>', 'a'.repeat(21), '', 'x"y']) {
+    const ctx = await boot({ label: bad });
+    try {
+      assert.equal((await new Client(ctx.base).req('GET', '/api/config')).json.label, '', JSON.stringify(bad));
+    } finally {
+      await ctx.app.close();
+    }
   }
 });

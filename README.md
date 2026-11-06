@@ -1,7 +1,7 @@
 # Big Two (Hong Kong rules) with four wild jokers
 
-A browser game. Play **solo** against three computer players (Easy, Medium, Hard), or **online**: accounts, one
-shared game at a time, chat, points and leaderboards. No runtime dependencies beyond Node itself (the packages in
+A browser game. Play **solo** against computer players (Easy, Medium, Hard) any time, for practice and not scored, or
+**online**: season games between four people, with accounts, one shared game at a time, chat, points and leaderboards. No runtime dependencies beyond Node itself (the packages in
 `package.json` are development tools only).
 
 Needs **Node 22.13 or later** (the server uses the built-in `node:sqlite`, still marked experimental upstream; it
@@ -20,86 +20,87 @@ until you sign in (a visitor gets only the sign-in page), so make an account fir
 A session lasts 30 days from its last use (using the site renews it, so regular players are not asked again),
 and never more than 180 days from the sign-in.
 
-| Environment variable | Meaning                                                            |
-| -------------------- | ------------------------------------------------------------------ |
-| `PORT`, `HOST`       | Where to listen. `HOST=0.0.0.0` exposes it on the network.         |
-| `DB_FILE`            | SQLite file (default `data/big2.db`).                              |
-| `AI_DELAY_MS`        | Pause before each computer move (default 700).                     |
-| `TRUST_PROXY=1`      | Behind a reverse proxy: take the client IP from `X-Forwarded-For`. |
-| `SECURE_COOKIES=1`   | Mark the session cookie `Secure` (use once served over HTTPS).     |
+| Environment variable       | Meaning                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `PORT`, `HOST`             | Where to listen. `HOST=0.0.0.0` exposes it on the network.                                        |
+| `DB_FILE`                  | SQLite file (default `data/big2.db`).                                                             |
+| `AI_DELAY_MS`              | Pause before each computer move (default 700).                                                    |
+| `DEV_TABLES=1`             | Development and tests only: computer seats and 3-seat online tables, created and started by hand. |
+| `TABLE_START_DELAY_MS`     | Wait from the fourth person sitting down to the deal (default 10000).                             |
+| `TABLE_NEXT_GAME_DELAY_MS` | How long a result stays up before the next game (default 30000).                                  |
+| `TRUST_PROXY=1`            | Behind a reverse proxy: take the client IP from `X-Forwarded-For`.                                |
+| `SECURE_COOKIES=1`         | Mark the session cookie `Secure` (use once served over HTTPS).                                    |
 
 ## Accounts and admin
 
 There is no sign-up by default. The first admin is created from a shell on the machine:
 
 ```
-node server/admin.js make-admin <name>          # asks for a password (hidden) and a mobile number
+node server/admin.js make-admin <name>          # asks for a password (hidden)
+node server/admin.js create-user <name>         # a normal (non-admin) user
 node server/admin.js reset-password <name>
-node server/admin.js set-phone <name>
-node server/admin.js login-code <name>          # prints a one-time sign-in code, for when texts do not arrive
-node server/admin.js list-users
+node server/admin.js list-users                 # also shows who has turn alerts on
 ```
 
-(`BIG2_PASSWORD` and `BIG2_PHONE` supply those answers in scripts.) Then sign in (Online, top bar) and open **Admin**
-to create users with a temporary password and a mobile number, reset passwords, set a number, disable or enable
-accounts, promote or demote admins, open or close self-registration, cancel the running game, and read the audit log.
-Every admin action is re-checked on the server and recorded. The last active admin cannot be removed or disabled.
-Users change their own password with the **Password** button. There is no email, so a lost password is reset by an
-admin.
+(`BIG2_PASSWORD` supplies the password in scripts.) Then sign in (Online, top bar) and open **Admin** to create users
+with a temporary password, reset passwords, disable or enable accounts, promote or demote admins, open or close
+self-registration, manage seasons, cancel the running game, and read the audit log. Every admin action is re-checked on
+the server and recorded. The last active admin cannot be removed or disabled. Users change their own password with the
+**Password** button. There is no email, so a lost password is reset by an admin. An account is a name and a password:
+the game keeps no phone numbers.
 
-**Signing in by text message.** When a text provider is configured (`SMS_PROVIDER` other than `none`), the sign-in
-dialog has **Text me a code**: enter your name, and a 6-digit code goes to the number on file. The code is stored
-hashed, lasts 10 minutes, allows 5 tries and works once; a new one replaces the old. Asking for a code answers the same
-for any name, so names cannot be probed, and costs at most 3 texts an hour per name and 20 an hour per address. Texts
-only ever go to numbers already on file. A correct code also proves the number. SMS is a weak factor (SIM swaps,
-interception), which is acceptable for a card game; if texts are down, `login-code` above is the way in.
+## Turn alerts (push notifications)
 
-## Phone numbers and text messages
+If it is your turn and you have not played, your phone gets an alert: one when it has been your turn for **20 minutes**,
+and one more if it is still your turn after **24 hours**. Never more than two for a turn, and nothing at all if you
+move in time. An alert says it is your turn and never shows cards. They are standard web push notifications, so they
+cost nothing, need no phone number and no account with a text-message company.
 
-**Every account has a mobile number** (international format, e.g. `+44 7700 900123`): it is how we tell you it is your
-turn. You cannot create an account without one (admin, command line or self-registration), a number can belong to only
-one account, and an account from before this rule is asked for one before it can join a game. Numbers are stored in
-E.164, shown to their owner only in masked form (`+44•••••••123`), masked again in the admin screen and in logs, and
-never written to the audit log or sent to other players.
+**Turning them on.** Under your name, **Turn alerts**. On an Android phone, signing in shows a one-tap bar (the browser
+only ever asks for permission from a tap). On an iPhone or iPad, alerts only work for a site opened from its Home
+Screen icon (iOS 16.4 or newer), so the first sign-in shows the steps: Share, Add to Home Screen, open the icon, sign in
+again there (the icon keeps its own sign-in), and tap Turn on. The dialog also has **Send a test alert**, **Turn off for
+this device**, the list of your devices, and a "Not getting alerts?" section (blocked in the phone's settings, Do Not
+Disturb, starting again). Computers can turn them on from the same dialog. Alerts belong to one phone and browser, and
+signing out takes that phone off your account, so the next person to use it is not told about your turns.
 
-**Verification.** When a text provider is configured, a new number must be confirmed with a 6-digit code (hashed,
-10 minutes, 5 tries, at most 3 codes an hour) before the person can join a game. With no provider there is nothing that
-could deliver a code, so numbers are required but accepted as entered. Numbers set at the command line count as verified.
+**How it works.** The browser gives the server a private address for the device (a push subscription) and two keys.
+The server encrypts each alert for that device (RFC 8291) and signs the request with its own key pair (VAPID, RFC 8292)
+before posting it to the browser's push service (Google, Apple or Mozilla), which delivers it. All of it is written with
+Node's own crypto in `server/web-push.js` and checked against the RFC's test vector. The signing keys are made on first
+start and kept in the database (so backups hold them: keep them private; changing them would silence every device).
+Subscriptions may only point at the real push services (a signed-in person cannot make the server call any address).
+A device the push service reports gone is forgotten. The time each turn began is saved with the game and what has been
+sent is read from the database, so a restart cannot repeat or skip an alert. A safety cap of 6 a day per person applies.
+A failing push service is logged and never affects the game.
 
-**When we text.** When the turn passes to a person, the server waits about 20 seconds, checks it is still their turn
-and (by default) that they have no page open, then sends one text: `Big Two: it's your turn. <link>`. Never any cards. At
-most one every 10 minutes and 12 a day per person, tracked in the database so a restart cannot repeat a text. People
-can switch texts off in the **Phone** dialog. If the carrier reports that someone opted out (STOP), texting them stops
-until they set their number again. A provider failure is logged and never affects the game.
+| Variable               | Meaning                                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_URL`           | The https address of the site, e.g. `https://big2.example.com`. Identifies the sender to Apple and Google. |
+| `PUSH_FIRST_AFTER_MS`  | First alert if the turn has not been played (default 1200000 = 20 minutes)                                 |
+| `PUSH_SECOND_AFTER_MS` | Second and last alert if it is still their turn (default 86400000 = 24 hours)                              |
+| `PUSH_MAX_PER_DAY`     | Safety cap per person per 24 hours (default 6)                                                             |
 
-| Variable                                                                                   | Meaning                                                                                                        |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `SMS_PROVIDER`                                                                             | `none` (no texts), `console` (default for local use: prints them), `aws-sns`, `twilio`, `http`                 |
-| `PUBLIC_URL`                                                                               | Address put in the text, e.g. `https://big2.example.com`                                                       |
-| `SMS_WHEN`                                                                                 | `offline` (default: only if no page is open) or `always`                                                       |
-| `SMS_DELAY_MS`                                                                             | Wait before texting (default 20000)                                                                            |
-| `SMS_COOLDOWN_MS`                                                                          | Minimum gap between turn texts per person (default 600000)                                                     |
-| `SMS_MAX_PER_DAY`                                                                          | Cap per person per 24 hours (default 12)                                                                       |
-| `PHONE_VERIFICATION=off`                                                                   | Accept numbers without a code even when a provider is set                                                      |
-| `PHONE_ALLOWED_PREFIXES`                                                                   | Comma list such as `+44,+1` to accept only those countries                                                     |
-| `SMS_SENDER_ID`                                                                            | Sender name, where the country and provider allow one                                                          |
-| `AWS_REGION`                                                                               | For `aws-sns`; credentials come from `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` or, on EC2, the instance role |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` or `TWILIO_MESSAGING_SERVICE_SID` | For `twilio`                                                                                                   |
-| `SMS_HTTP_URL`, `SMS_HTTP_AUTHORIZATION`                                                   | For `http`: a JSON `POST {"to": "...", "body": "..."}` to your own endpoint (https required)                   |
-
-Providers live in `server/sms/` behind one small interface (`send({to, body})`), call their services with `fetch` and
-need no SDK, so adding another is a single file. The AWS provider signs requests itself (SigV4, checked against AWS's
-published test vector) and needs only `sns:Publish` on `*`. **What AWS controls that code cannot:** a new account is in
-the SMS _sandbox_ (it can text only numbers you have verified in the console) until you request production access, the
-monthly spend limit starts low and must be raised, and many countries require a registered sender ID or number (in the
-US this takes weeks). Check the current SNS documentation and pricing before relying on it. The `console` provider
-prints verification codes: never use it in production.
+**Not checked by the automated tests, and cannot be:** a real alert through Google's or Apple's servers to a real phone.
+The tests decrypt what the server sends, as a phone would. Use **Send a test alert** on each kind of phone to confirm.
+Opening an old database erases any phone numbers and text-message records it still holds.
 
 ## How online games work
 
-- **One game at a time**, created by an admin. Anyone signed in can join it while it is waiting; the host starts it.
-  Empty seats are played by the computer at the level the admin chose.
-- A started game **holds its seats until it finishes or an admin cancels it**. There is no turn timer; the game waits
+- **The table runs itself.** While a season is running there is always one table with four seats and nobody creates or
+  starts a game. People take a seat; when all four are taken (people only, no computer players) the game starts after
+  a 10 second countdown (`TABLE_START_DELAY_MS`). When it ends the result stays up for 30 seconds
+  (`TABLE_NEXT_GAME_DELAY_MS`) and the next game starts with the same four. Someone who presses **Leave table** on the
+  result frees their seat, and the table waits for a replacement. A season that ends **by its dates** lets the game in
+  progress finish and then closes the table (the game counts in no season, as before); an admin's **End now** stops the
+  game in progress (recorded as cancelled, never scored) and closes the table. **Cancel game** clears the table and,
+  with a season running, a fresh empty one opens. A season that starts by its dates opens the table (a clock checks
+  every few seconds). The countdown shows on screen and carries on after a server restart.
+  (`DEV_TABLES=1` is for development and tests: an admin creates the game and starts it by hand, with computer seats
+  and 3-seat tables. Production never sets it.)
+- An admin can **switch to the player view** (account menu) to see the game without the admin controls; it only hides
+  them on this device, and the server still checks everything.
+- A started game **holds its seats until it finishes or an admin cancels it** (you can only leave on the result). There is no turn timer; the game waits
   for anyone who is offline. "Back to lobby" keeps your seat. The live game is saved to SQLite after every change, so
   it **survives a server restart**.
 - A cancelled game is recorded as cancelled and **never counts toward scoring**.
@@ -109,17 +110,24 @@ prints verification codes: never use it in production.
   to zero. These thresholds are an adaptation of the 13-card scale to 14-card hands, not a published rule: change
   `RATES`.
 - **Leaderboards are cumulative:** running total points, with games, wins, win % and points per game beside them, and a
-  toggle to rank by per-game instead of total. Games with computer players are scored on their own board.
+  toggle to rank by per-game instead of total. Only online season games count; solo games are not scored.
+- **My solo stats** (account menu): your own finished solo games against the computer, by table size (4 and 3 players)
+  and level, each size's total, each level over both sizes, and an overall row: games, wins, win %, points and points
+  per game. The browser reports each round when it ends (and keeps it and sends it later if the server cannot be
+  reached); the server counts each round once, checks it could be a real result, and only ever returns the signed-in
+  person's own rows. Nobody else, an admin included, can see them, and they are on no leaderboard.
 - **Seasons** are date ranges set by an admin (Admin > Seasons): a name, a start and an optional end, in the admin's local
   time (stored as UTC). A game counts in the season in which it **finished** (`starts <= finished < ends`). Seasons
   cannot overlap; gaps are allowed, and games in a gap count only in **All-time**. Boards can be viewed for the current
   season, any past or upcoming season, or all-time. Boards are calculated from the games, so editing a season's dates
-  re-sorts its games (and is audit-logged); nothing is ever deleted. There is always a first season: "Season 1", created
-  automatically, open-ended, starting at the earliest existing game.
+  re-sorts its games (and is audit-logged); nothing is ever deleted. A new database starts with "Season 1" (open-ended,
+  starting at the earliest existing game). After that, having no season is allowed and lasts across restarts: no online
+  game can start until an admin creates one. **End now** on a running season stops it at that moment; a new season's
+  start defaults to now.
 
 ## On a phone
 
-The page is responsive and can be added to the home screen (it has a web app manifest and icons). Your hand is one
+The page is responsive and can be added to the home screen (it has a web app manifest and icons; on an iPhone that is also what turn alerts need). Your hand is one
 curved row tucked into the bottom edge of the table: **tap** a card to select it, or **swipe** across several to select
 (or deselect) them; selected cards lift well clear of the row. Landscape has its own compact layout. If the app was in
 the background for a few seconds it reconnects and re-syncs when you return.

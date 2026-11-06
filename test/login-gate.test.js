@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createUser, createSession, renewSession, getSession } from '../server/auth.js';
-import { boot, makeUser, PASSWORD, nextPhone } from './support.js';
+import { boot, makeUser, PASSWORD } from './support.js';
 
 const DAY = 24 * 3600 * 1000;
 const TTL = 30 * DAY;
@@ -55,7 +55,7 @@ test('signed in, the game is served; after logging out it is not', async () => {
 
 test('a session is renewed from its last use, and never beyond the absolute cap', async () => {
   const db = openDb();
-  await createUser(db, 'dana', PASSWORD, { phone: nextPhone() });
+  await createUser(db, 'dana', PASSWORD);
   const id = db.prepare("SELECT id FROM users WHERE name = 'dana'").get().id;
   const expiry = (t) => db.prepare('SELECT expires FROM sessions').get().expires - t;
 

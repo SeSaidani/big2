@@ -43,10 +43,7 @@ async function seed() {
   const names = ['ann', 'bob', 'cat', 'dan', 'eve'];
   const ids = [];
   for (let i = 0; i < names.length; i++) {
-    const u = await createUser(db, names[i], PW, {
-      phone: `+4477009${String(i + 1).padStart(5, '0')}`,
-      verified: true,
-    });
+    const u = await createUser(db, names[i], PW);
     ids.push(u.id);
   }
   let clock = Date.now() - 5 * 60 * 1000;

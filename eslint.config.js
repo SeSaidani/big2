@@ -32,8 +32,11 @@ export default [
   },
   // The rules engine and AI run in the browser, in a worker and in Node.
   { files: ['src/**/*.js'], languageOptions: { globals: { performance: 'readonly' } } },
-  { files: ['src/ui.js', 'src/online.js', 'signin.js'], languageOptions: { globals: globals.browser } },
-  { files: ['src/ai/worker.js'], languageOptions: { globals: globals.worker } },
+  {
+    files: ['src/ui.js', 'src/online.js', 'src/push-client.js', 'signin.js'],
+    languageOptions: { globals: globals.browser },
+  },
+  { files: ['src/ai/worker.js', 'sw.js'], languageOptions: { globals: globals.serviceworker } },
   {
     files: ['server/**', 'tools/**', 'test/**', 'e2e/**', 'eslint.config.js'],
     languageOptions: { globals: globals.node },

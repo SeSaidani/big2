@@ -87,12 +87,12 @@
         </svg>
         <span class="sr-only">Big Two, 4 jokers wild</span>
       </h1>
+      <span id="siteLabel" class="site-label" hidden></span>
       <div class="controls">
         <div class="mode" role="group" aria-label="Mode">
           <button type="button" id="modeSolo" class="seg active">Solo</button>
           <button type="button" id="modeOnline" class="seg">Online</button>
         </div>
-        <span id="record" class="record solo-only"></span>
         <span id="soloChip" class="chip solo-only" title="The settings of this game"></span>
         <button type="button" id="newBtn" class="solo-only">New game</button>
       </div>
@@ -100,13 +100,23 @@
       <details id="account" class="account" hidden>
         <summary id="who" aria-label="Account menu"></summary>
         <div class="menu">
+          <button type="button" id="soloStatsBtn" class="ghost">My solo stats</button>
           <button type="button" id="adminBtn" class="ghost online-only" hidden>Admin</button>
-          <button type="button" id="phoneBtn" class="ghost online-only" hidden>Phone</button>
+          <button type="button" id="viewBtn" class="ghost online-only" hidden>Switch to player view</button>
+          <button type="button" id="alertsBtn" class="ghost online-only" hidden>Turn alerts</button>
           <button type="button" id="passwordBtn" class="ghost online-only" hidden>Password</button>
           <button type="button" id="logoutBtn" class="ghost">Log out</button>
         </div>
       </details>
     </header>
+
+    <section id="alertsBanner" class="banner" aria-label="Turn alerts" hidden>
+      <span>Get an alert on this phone when it is your turn?</span>
+      <span class="banner-actions">
+        <button type="button" id="alertsBannerOn" class="primary">Turn on alerts</button>
+        <button type="button" id="alertsBannerLater" class="ghost">Not now</button>
+      </span>
+    </section>
 
     <div class="layout">
       <main class="table" id="tableMain" aria-label="Game table">
@@ -144,6 +154,7 @@
             <button type="button" id="leaveBtn" class="ghost online-only" title="Your seat is kept until the game ends">
               Back to lobby
             </button>
+            <button type="button" id="forfeitBtn" class="ghost online-only" hidden>Leave seat</button>
           </div>
         </section>
       </main>
@@ -154,14 +165,14 @@
             <h2>Play online</h2>
             <div id="gameBox"></div>
             <div class="row" id="createRow" hidden>
-              <label
+              <label class="dev-only" hidden
                 >Players
                 <select id="newSeats">
                   <option value="4" selected>4</option>
                   <option value="3">3</option>
                 </select>
               </label>
-              <label
+              <label class="dev-only" hidden
                 >AI level
                 <select id="newLevel">
                   <option value="easy">Easy</option>
@@ -170,6 +181,7 @@
                 </select>
               </label>
               <button type="button" id="createBtn" class="primary">Create game</button>
+              <span class="muted">A season game seats 4 people and starts when all four have joined.</span>
             </div>
             <p id="lobbyMsg" class="bad"></p>
           </section>
@@ -186,8 +198,6 @@
               ></label>
             </div>
             <div class="row">
-              <button type="button" id="lbHuman" class="seg active">Humans only</button>
-              <button type="button" id="lbAi" class="seg">With computer players</button>
               <button type="button" id="lbSort" class="ghost">Ranked by: total points</button>
             </div>
             <p id="lbSeasonInfo" class="muted"></p>
@@ -207,8 +217,8 @@
                 <tbody id="lbBody"></tbody>
               </table>
               <p class="muted">
-                Points are running totals (what you have won minus what you have paid). Games with computer players are
-                scored on their own board.
+                Points are running totals (what you have won minus what you have paid). Only online season games count;
+                solo games are not scored.
               </p>
             </div>
             <div id="lsBox" hidden>
@@ -248,6 +258,8 @@
               Chat
             </button>
           </div>
+          <p id="waitNotice" class="muted"></p>
+          <p id="waitCount" class="alerts-status"></p>
           <p id="waitMsg" class="bad"></p>
         </section>
       </main>
@@ -285,10 +297,6 @@
                 </button>
               </div>
             </div>
-            <div class="field">
-              <label for="newUserPhone">Mobile number, with country code (we text them when it is their turn)</label>
-              <input type="tel" id="newUserPhone" autocomplete="off" maxlength="30" placeholder="+44 7700 900123" />
-            </div>
             <label class="check"><input type="checkbox" id="newUserAdmin" /> Make this user an admin</label>
             <div class="row"><button type="button" id="createUserBtn" class="primary">Create user</button></div>
             <p id="createUserMsg" class="muted"></p>
@@ -322,7 +330,7 @@
               ><input type="text" id="seasonName" maxlength="40" autocomplete="off" />
             </div>
             <div class="field">
-              <label for="seasonStart">Starts</label><input id="seasonStart" type="datetime-local" />
+              <label for="seasonStart">Starts (empty means now)</label><input id="seasonStart" type="datetime-local" />
             </div>
             <div class="field">
               <label for="seasonEnd">Ends (optional)</label><input id="seasonEnd" type="datetime-local" />
@@ -341,7 +349,7 @@
               <tr>
                 <th>Name</th>
                 <th>Role</th>
-                <th>Phone</th>
+                <th>Alerts</th>
                 <th>Games</th>
                 <th>Last login</th>
                 <th>Actions</th>
@@ -379,9 +387,14 @@
       <div class="panel">
         <h2 id="endTitle">Round over</h2>
         <div id="endHands"></div>
+        <p id="endCount" class="alerts-status"></p>
         <p id="endNote" class="muted"></p>
         <div class="row">
           <button type="button" id="againBtn" class="primary">Play again</button>
+          <button type="button" id="againNewBtn" class="solo-only">Change level or players</button>
+          <button type="button" id="endStats" class="ghost solo-only">My solo stats</button>
+          <button type="button" id="endClose" class="ghost solo-only">Close</button>
+          <button type="button" id="endOnline" class="ghost solo-only">Go online</button>
           <button type="button" id="endLeave" class="online-only">Leave table</button>
         </div>
       </div>
@@ -409,46 +422,102 @@
       </div>
     </dialog>
 
-    <dialog id="phoneDlg">
-      <h2>Your phone number</h2>
+    <dialog id="alertsDlg" class="alerts">
+      <h2>Turn alerts</h2>
       <p class="muted">
-        We text you when it is your turn and you are not looking at the game. Nobody else ever sees your number.
+        If it is your turn and you have not played after 20 minutes, this phone gets an alert, and one more after 24
+        hours. It never shows your cards. Nobody else sees anything.
       </p>
-      <p>Current number: <b id="phoneCurrent">none</b> <span id="phoneState" class="muted"></span></p>
-      <div class="field">
-        <label for="phoneInput">New number, with country code</label>
-        <div class="row">
-          <input type="tel" id="phoneInput" autocomplete="tel" maxlength="30" placeholder="+44 7700 900123" />
-          <button type="button" id="phoneSave">Save number</button>
-        </div>
+      <p id="alertsStatus" class="alerts-status"></p>
+      <div id="alertsHelp" class="alerts-help"></div>
+      <div class="row">
+        <button type="button" id="alertsOn" class="primary" hidden>Turn on alerts</button>
+        <button type="button" id="alertsTest" hidden>Send a test alert</button>
+        <button type="button" id="alertsOff" class="ghost" hidden>Turn off alerts on this device</button>
       </div>
-      <div class="field" id="phoneCodeField" hidden>
-        <label for="phoneCode">The 6-digit code we texted you</label>
-        <div class="row">
-          <input type="text" id="phoneCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
-          <button type="button" id="phoneVerify" class="primary">Verify</button>
-          <button type="button" id="phoneResend" class="ghost">Send a new code</button>
-        </div>
+      <p id="alertsMsg" class="bad"></p>
+      <details id="alertsHow" class="alerts-trouble" hidden>
+        <summary id="alertsHowTitle">How to allow alerts</summary>
+        <ol id="alertsHowSteps" class="ios-steps"></ol>
+        <p class="muted">The names of the menus differ a little between phones and versions of the browser.</p>
+      </details>
+      <div id="alertsDevices" hidden>
+        <h3>Devices with alerts on</h3>
+        <ul id="alertsDeviceList" class="muted"></ul>
+        <button type="button" id="alertsOffAll" class="ghost">Turn off alerts on all my devices</button>
       </div>
-      <label class="check"><input type="checkbox" id="smsToggle" /> Text me when it is my turn</label>
-      <p id="phoneMsg" class="bad"></p>
-      <div class="row"><button type="button" id="phoneClose">Close</button></div>
+      <details class="alerts-trouble">
+        <summary>Not getting alerts?</summary>
+        <ul>
+          <li>
+            Press <b>Send a test alert</b>. If it arrives, everything works and the game just has not reached your turn
+            yet. Alerts only come after 20 minutes of not playing.
+          </li>
+          <li>
+            <b>Blocked?</b> If you once tapped Block, the phone remembers. Android: open Settings, Apps, your browser,
+            Notifications, and allow them. iPhone: Settings, Notifications, Big Two, Allow Notifications.
+          </li>
+          <li>
+            <b>Silent?</b> Do Not Disturb, a Focus mode or battery saver can hold alerts back. Add Big Two to the
+            allowed apps, or turn the mode off.
+          </li>
+          <li>
+            <b>Start again.</b> Press <b>Turn off alerts on this device</b>, then <b>Turn on alerts</b>. On an iPhone
+            you can also delete the Home Screen icon, add the game to the Home Screen again, sign in and turn alerts on.
+          </li>
+          <li>
+            <b>New phone or browser?</b> Alerts belong to one phone and browser. Sign in there and turn them on there
+            too.
+          </li>
+        </ul>
+      </details>
+      <p id="alertsDiag" class="muted diag"></p>
+      <div class="row"><button type="button" id="alertsClose">Close</button></div>
     </dialog>
 
-    <dialog id="adminPhoneDlg">
-      <h2>Set a phone number</h2>
+    <dialog id="soloStatsDlg" class="help">
+      <button type="button" id="soloStatsX" class="ghost dialog-x" aria-label="Close" title="Close">×</button>
+      <h2>My solo stats</h2>
       <p class="muted">
-        For <b id="adminPhoneName"></b>. They confirm it with a texted code before they can be texted.
+        Your finished solo games against the computer. Only you can see this, and solo games are not on any leaderboard.
+        Points are what you won or paid at the end of each round.
       </p>
-      <div class="field">
-        <label for="adminPhoneInput">Number, with country code</label>
-        <input type="tel" id="adminPhoneInput" autocomplete="off" maxlength="30" placeholder="+44 7700 900123" />
+      <p id="soloStatsEmpty" class="muted" hidden>No solo games yet: finish one and it appears here.</p>
+      <div class="ls-scroll">
+        <table class="ls solo-stats">
+          <thead>
+            <tr>
+              <th>Players and level</th>
+              <th>Games</th>
+              <th>Wins</th>
+              <th>Win %</th>
+              <th>Points</th>
+              <th>Per game</th>
+            </tr>
+          </thead>
+          <tbody id="soloStatsBody"></tbody>
+        </table>
       </div>
-      <p id="adminPhoneErr" class="bad"></p>
-      <div class="row">
-        <button type="button" id="adminPhoneOk" class="primary">Set number</button>
-        <button type="button" id="adminPhoneCancel" class="ghost">Cancel</button>
-      </div>
+      <p class="muted">
+        Playing at random you would win about 1 game in 4 at a table of four, and 1 in 3 at a table of three.
+      </p>
+      <div class="row"><button type="button" id="soloStatsClose">Close</button></div>
+    </dialog>
+
+    <dialog id="iosDlg" class="alerts">
+      <h2>Get turn alerts on your iPhone</h2>
+      <p>
+        To get an alert when it is your turn, the game has to live on your Home Screen first. It takes about a minute:
+      </p>
+      <ol class="ios-steps">
+        <li>Open this page in <b>Safari</b> (not inside another app).</li>
+        <li>Tap the <b>Share</b> button (the square with an arrow, at the bottom of the screen).</li>
+        <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+        <li>Open <b>Big Two</b> from the new icon on your Home Screen.</li>
+        <li>Sign in again there (the icon keeps its own sign-in), then tap <b>Turn on alerts</b> when it asks.</li>
+      </ol>
+      <p class="muted">Needs iOS 16.4 or newer. You can find these steps again under your name, then Turn alerts.</p>
+      <div class="row"><button type="button" id="iosOk" class="primary">Got it</button></div>
     </dialog>
 
     <dialog id="helpDlg" class="help">
@@ -459,8 +528,8 @@
       <h3>The cards</h3>
       <p>
         56 cards: a standard deck plus 4 wild jokers. Ranks run 3 (lowest) up to K, A and 2 (highest). Suits run ♦ &lt;
-        ♣ &lt; ♥ &lt; ♠. With 4 players everyone gets 14 cards. With 3 players everyone gets 18, and the 2 spare cards
-        go to whoever holds the 3♦ and whoever holds the 2♠ (so they start with 19, or one player with 20).
+        ♣ &lt; ♥ &lt; ♠. With 4 players everyone gets 14 cards. With 3 players (solo only) everyone gets 18, and the 2
+        spare cards go to whoever holds the 3♦ and whoever holds the 2♠ (so they start with 19, or one player with 20).
       </p>
       <h3>Playing</h3>
       <ul>
@@ -529,24 +598,33 @@
       </p>
       <h3>Solo</h3>
       <p>
-        Play against the computer. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The settings are
-        fixed for the whole game.
+        Play against the computer, any time. Press New game to choose 3 or 4 players and Easy, Medium or Hard. The
+        settings are fixed for the whole game. Solo games are for practice: they are not on the leaderboard, but your
+        own results are kept: under your name, My solo stats.
       </p>
       <h3>Online</h3>
       <ul>
-        <li>One game runs at a time. An admin creates it, and only an admin can cancel it.</li>
-        <li>Seats nobody takes are played by the computer at the level the admin chose.</li>
+        <li>
+          While a season is running there is always a table. Take a seat: when all 4 seats are taken the game starts by
+          itself a few seconds later. There are no computer players online. For those, play Solo.
+        </li>
+        <li>
+          When a game ends, the result stays up for half a minute and then the next game starts with the same people.
+          Press Leave table on the result if you want to stop; your seat is then open for someone else.
+        </li>
+        <li>
+          Nobody starts or creates games. An admin runs the season: ending it stops the game in progress (it is not
+          scored). A season that reaches its end date lets the game in progress finish and then stops.
+        </li>
         <li>
           Leaving to the lobby keeps your seat. Nobody is timed out: if a player is away, the game waits for them.
         </li>
         <li>Chat appears once two or more people are at the table.</li>
         <li>
-          Where the server has texting switched on, you get a text when it is your turn, to the mobile number on your
-          account.
+          Turn on alerts (under your name, then Turn alerts) and your phone buzzes if it has been your turn for 20
+          minutes, and once more after 24 hours. On an iPhone, add the game to the Home Screen first.
         </li>
-        <li>
-          The leaderboard adds up points over a season. Games with computer players are scored on their own board.
-        </li>
+        <li>The leaderboard adds up points over a season. Only online season games count towards it.</li>
       </ul>
       <div class="row">
         <button type="button" id="helpClose" class="primary">Close</button>

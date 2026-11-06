@@ -58,7 +58,7 @@ const sum = (a) => a.reduce((t, v) => t + v, 0);
 test("a player's luck and play are the sums over their games, checked against the model computed independently", () => {
   const { db, ids, addGame } = setup();
   const games = Array.from({ length: 12 }, (_, i) => addGame({ seed: 100 + i, users: ids }));
-  const out = luckAndSkill(db, 'human', { now: NOW });
+  const out = luckAndSkill(db, { now: NOW });
   assert.equal(out.rows.length, 4);
   assert.equal(out.pending, 0);
 
@@ -91,7 +91,7 @@ test(`a player with fewer than ${MIN_GAMES} games is listed but not ready, after
   const { db, ids, addGame } = setup(['ann', 'bob', 'cat', 'dan', 'eve']);
   for (let i = 0; i < MIN_GAMES; i++) addGame({ seed: 200 + i, users: ids.slice(0, 4) });
   for (let i = 0; i < 3; i++) addGame({ seed: 300 + i, users: [ids[4], ids[1], ids[2], ids[3]] });
-  const out = luckAndSkill(db, 'human', { now: NOW });
+  const out = luckAndSkill(db, { now: NOW });
   const eve = out.rows.find((r) => r.name === 'eve');
   assert.equal(eve.games, 3);
   assert.equal(eve.ready, false);
@@ -105,23 +105,26 @@ test('games saved without a deal count as played but not in the figures', () => 
   const { db, ids, addGame } = setup();
   for (let i = 0; i < 4; i++) addGame({ seed: 400 + i, users: ids });
   for (let i = 0; i < 2; i++) addGame({ seed: 500 + i, users: ids, record: false });
-  const ann = luckAndSkill(db, 'human', { now: NOW }).rows.find((r) => r.name === 'ann');
+  const ann = luckAndSkill(db, { now: NOW }).rows.find((r) => r.name === 'ann');
   assert.equal(ann.games, 4);
   assert.equal(ann.played, 6);
   db.close();
 });
 
-test('the two boards stay apart, as on the leaderboard', () => {
+test('games with computer players are neither priced nor counted', () => {
   const { db, ids, addGame } = setup();
   addGame({ seed: 600, users: ids });
   addGame({ seed: 601, users: [ids[0], null, null, null], hasAi: true });
-  assert.equal(luckAndSkill(db, 'human', { now: NOW }).rows.find((r) => r.name === 'ann').games, 1);
-  const ai = luckAndSkill(db, 'ai', { now: NOW }).rows;
-  assert.deepEqual(
-    ai.map((r) => [r.name, r.games]),
-    [['ann', 1]],
-    'computer seats have no row, and the human game is not on this board',
+  const out = luckAndSkill(db, { now: NOW });
+  const ann = out.rows.find((r) => r.name === 'ann');
+  assert.equal(ann.games, 1);
+  assert.equal(ann.played, 1, 'a game with computer players is not counted as played here either');
+  assert.equal(
+    db.prepare('SELECT COUNT(DISTINCT game_id) AS n FROM game_expectation').get().n,
+    1,
+    'only the human game was priced',
   );
+  assert.equal(out.pending, 0);
   db.close();
 });
 
@@ -129,7 +132,7 @@ test('three- and four-player games pool correctly: each is priced by its own mod
   const { db, ids, addGame } = setup();
   const g4 = addGame({ seed: 700, users: ids });
   const g3 = addGame({ seed: 701, users: ids.slice(0, 3) });
-  const ann = luckAndSkill(db, 'human', { now: NOW }).rows.find((r) => r.name === 'ann');
+  const ann = luckAndSkill(db, { now: NOW }).rows.find((r) => r.name === 'ann');
   const p4 = predictDeal(MODEL(4), g4.rec.deals);
   const p3 = predictDeal(MODEL(3), g3.rec.deals);
   assert.ok(Math.abs(ann.expWins - (p4.winProbabilities[0] + p3.winProbabilities[0])) < 1e-9);
@@ -141,14 +144,14 @@ test('numbers are cached once per game and model, recomputed after a model chang
   const { db, ids, addGame } = setup();
   const g = addGame({ seed: 800, users: ids });
   const rows = () => db.prepare('SELECT COUNT(*) AS n FROM game_expectation').get().n;
-  const before = luckAndSkill(db, 'human', { now: NOW });
+  const before = luckAndSkill(db, { now: NOW });
   assert.equal(rows(), 4);
-  luckAndSkill(db, 'human', { now: NOW });
+  luckAndSkill(db, { now: NOW });
   assert.equal(rows(), 4, 'a second call prices nothing');
 
   // Pretend the model file changed: the old numbers are ignored and the game is priced again.
   db.prepare("UPDATE game_expectation SET model = 'an-older-model'").run();
-  const after = luckAndSkill(db, 'human', { now: NOW });
+  const after = luckAndSkill(db, { now: NOW });
   assert.equal(rows(), 8, 'old rows are kept but the current model priced the game afresh');
   assert.deepEqual(after.rows, before.rows, 'the same model gives the same figures');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_expectation WHERE model = ?').get(modelIds()[4]).n, 4);
@@ -162,7 +165,7 @@ test('one game with a damaged record is skipped and logged, and everyone else is
   for (let i = 0; i < 3; i++) addGame({ seed: 901 + i, users: ids });
   db.prepare('DELETE FROM game_deals WHERE game_id = ? AND seat = 3').run(bad.id);
   const logged = [];
-  const out = luckAndSkill(db, 'human', { now: NOW, log: (...a) => logged.push(a) });
+  const out = luckAndSkill(db, { now: NOW, log: (...a) => logged.push(a) });
   assert.equal(out.rows.find((r) => r.name === 'ann').games, 3, 'the three good games count');
   assert.equal(logged.length, 1);
   assert.equal(logged[0][1], bad.id);
