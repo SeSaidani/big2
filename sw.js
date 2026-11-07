@@ -21,7 +21,7 @@ self.addEventListener('push', (event) => {
       body: text(data.body, "It's your turn."),
       tag: text(data.tag, 'turn'),
       renotify: true, // a second alert with the same tag still buzzes
-      icon: '/notify-icon.png', // the three-card logo
+      icon: '/icon-192.png', // the app icon: the three-card logo
       badge: '/notify-badge.png', // its outline: the small single-colour mark in the status bar (Android)
       data: { url },
     }),

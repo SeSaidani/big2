@@ -1,6 +1,8 @@
-// Makes the two pictures a turn alert uses, from the three-card Big Two logo (the 3 of diamonds, the Joker and the
+// Makes the app icons and the alert badge from the three-card Big Two logo (the 3 of diamonds, the Joker and the
 // 2 of spades, as drawn on the sign-in page):
-//   notify-icon.png   192 x 192, the cards on the table green: the picture shown in the alert
+//   icon-180.png, icon-192.png, icon-512.png   the cards on the table green, full square (the phone rounds the
+//                      corners itself): the home-screen icon, and also the picture shown in a turn alert
+//   favicon.svg        the same picture as a vector, for the browser tab
 //   notify-badge.png   96 x 96, white outlines on a transparent background: the small mark in the status bar. Android
 //                      keeps only the shape (the transparency) and paints it one colour, so it cannot be a coloured
 //                      picture.
@@ -45,19 +47,24 @@ const cards = (outline) => {
     </g>`;
 };
 
-const page = (size, body) =>
+// The app icon: the cards on the table green, with room round them so no phone's corner rounding clips them.
+const APP_VIEW = '10 -63 280 280';
+const appIcon = () => `<rect x="10" y="-63" width="280" height="280" fill="#0f5a3a" />${cards(false)}`;
+
+const page = (size, body, view = VIEW) =>
   `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent}svg{display:block}</style></head>` +
-  `<body><svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${VIEW}">${body}</svg></body></html>`;
+  `<body><svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${view}">${body}</svg></body></html>`;
 
 const jobs = [
-  {
-    file: 'notify-icon.png',
-    size: 192,
-    // The table green behind the cards, with the rounded corners of the app icon.
-    html: page(192, `<rect x="30" y="-30" width="240" height="240" rx="44" fill="#0f5a3a" />${cards(false)}`),
-  },
+  ...[180, 192, 512].map((size) => ({ file: `icon-${size}.png`, size, html: page(size, appIcon(), APP_VIEW) })),
   { file: 'notify-badge.png', size: 96, html: page(96, cards(true)) },
 ];
+
+fs.writeFileSync(
+  path.join(ROOT, 'favicon.svg'),
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${APP_VIEW}">${appIcon()}</svg>\n`,
+);
+console.log('favicon.svg written');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'big2-icons-'));
 try {
