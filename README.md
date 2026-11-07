@@ -159,7 +159,10 @@ five of a kind). A straight is worth its highest card; ace and 2 are low in A-2-
 straights. You can pass even with the lead. If the next player has one card left, a single must be your highest. A
 real card always beats a joker standing for the same thing: a joker hand ranks as the hand its jokers represent, and
 the real hand wins any exact tie. So nothing beats the real 2♠, a lone joker is a 2♠ that loses to it (but beats the
-2♥ and everything below), and two jokers cannot beat each other. If nobody left can beat a play, the others are passed
+2♥ and everything below), and two jokers cannot beat each other. A pair is decided by its higher card, as in ordinary Big
+Two: a joker in a pair stands for the spade of that rank, so two jokers are a pair of 2s with a joker as the 2♠ on top,
+and only a pair holding the real 2♠ beats them (the other two jokers, or a joker with a real 2♥, 2♦ or 2♣, tie with
+them and cannot be played on them). If nobody left can beat a play, the others are passed
 automatically.
 
 ## Layout

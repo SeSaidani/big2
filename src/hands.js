@@ -48,6 +48,11 @@ const CAT_BASE = 2_000_000;
 // wins; equal joker counts still tie. A lone joker is a 2♠ with no real card,
 // so nothing beats the real 2♠, the real 2♠ beats a joker, and a joker beats
 // everything below the 2♠.
+// The exception is a pair, which is decided by its higher card alone (as in
+// ordinary Big Two): its tie value is 1 if that higher card is real and 0 if it
+// is a joker, whatever the lower card is. So two jokers (a pair of 2s with a
+// joker as the 2♠ on top) are beaten only by a pair holding the real 2♠, and a
+// joker with a real 2♥, 2♦ or 2♣ ties with them.
 export const TIE = 8;
 export const baseKey = (cls) => Math.floor(cls.key / TIE);
 const withTie = (base, cards, jokers) => base * TIE + (cards - jokers);
@@ -109,11 +114,20 @@ export function classify(cards) {
   const r = nat.length ? rankOf(nat[0]) : RANK_TWO;
   for (const c of nat) if (rankOf(c) !== r) return null;
   if (n === 2) {
-    // A joker in a pair becomes the spade of that rank; two jokers are 2s.
+    // A joker in a pair becomes the spade of that rank; two jokers are 2s. The pair is ranked by its higher card: a
+    // real card on top beats a joker standing for the same card, and otherwise the lower card makes no difference.
     let suit = SPADES;
+    let topIsReal = 1;
     if (!j) suit = Math.max(suitOf(nat[0]), suitOf(nat[1]));
+    else topIsReal = nat.some((c) => suitOf(c) === SPADES) ? 1 : 0;
     const jokerAs = Array(j).fill(asCard(r, SPADES));
-    return { type: PAIR, cat: 0, key: withTie(r * 4 + suit, 2, j), label: `Pair of ${rankPlural(r)}`, jokerAs };
+    return {
+      type: PAIR,
+      cat: 0,
+      key: (r * 4 + suit) * TIE + topIsReal,
+      label: `Pair of ${rankPlural(r)}`,
+      jokerAs,
+    };
   }
   return {
     type: TRIPLE,

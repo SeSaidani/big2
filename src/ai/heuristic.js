@@ -53,14 +53,17 @@ export function buildContext(view) {
   }
   let maxSingle = uj > 0 ? singleKeyOf(FIRST_JOKER) : -1;
   // Strongest pair/triple keys opponents could hold, in classify()'s encoding
-  // (base · TIE + natural-card count, so real cards win ties).
+  // (base · TIE + tie value: the natural-card count, except that a pair's is 1 when its higher card is real, else 0).
   let maxPair = uj >= 2 ? (RANK_TWO * 4 + 3) * TIE : -1;
   let maxTriple = uj >= 3 ? RANK_TWO * TIE : -1;
   for (let r = 0; r < 13; r++) {
     const u = unseenByRank[r];
     if (u.length) maxSingle = Math.max(maxSingle, singleKeyOf(u[u.length - 1]));
-    if (u.length >= 2) maxPair = Math.max(maxPair, (r * 4 + suitOf(u[u.length - 1])) * TIE + 2);
-    if (u.length >= 1 && uj >= 1) maxPair = Math.max(maxPair, (r * 4 + 3) * TIE + 1);
+    if (u.length >= 2) maxPair = Math.max(maxPair, (r * 4 + suitOf(u[u.length - 1])) * TIE + 1);
+    if (u.length >= 1 && uj >= 1) {
+      // A joker takes the spade: the pair's higher card is real only if the real spade of this rank is the other card.
+      maxPair = Math.max(maxPair, (r * 4 + 3) * TIE + (suitOf(u[u.length - 1]) === SPADES ? 1 : 0));
+    }
     if (u.length >= 1 && u.length + uj >= 3) maxTriple = Math.max(maxTriple, r * TIE + Math.min(u.length, 3));
   }
   const n = view.counts.length;

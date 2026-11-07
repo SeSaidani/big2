@@ -143,11 +143,14 @@ test('jokers resolve to the strongest possible five-card hand', () => {
 });
 
 test('the real card beats the joker when plays are otherwise equal', () => {
-  // Pairs: a joker pairs as the spade, but the real spade wins.
+  // Pairs are decided by their higher card: a joker pairs as the spade, and the real spade on top wins.
   assert.ok(beats(C('5♣ 5♠'), C('5♦ X')));
   assert.ok(!beats(C('5♦ X'), C('5♣ 5♠')));
   assert.ok(beats(C('2♣ 2♠'), C('X X')));
-  assert.ok(beats(C('2♦ X'), C('X X')));
+  assert.ok(beats(C('2♠ X'), C('X X')));
+  // A joker with a real 2♦ has a joker on top, like two jokers: they tie, and neither can be played on the other.
+  assert.ok(!beats(C('2♦ X'), C('X X')));
+  assert.ok(!beats(C('X X'), C('2♦ X')));
   // The tie-break never overrides real strength.
   assert.ok(beats(C('5♦ X'), C('5♣ 5♥')));
   assert.ok(beats(C('X X'), C('2♦ 2♥')));
