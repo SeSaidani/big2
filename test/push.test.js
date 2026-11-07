@@ -388,14 +388,14 @@ test('the alert shows the three-card logo: both pictures are served, are PNGs of
       assert.equal(b.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', `${name} is a PNG`);
       return { width: b.readUInt32BE(16), height: b.readUInt32BE(20), colorType: b[25] };
     };
-    const icon = await png('notify-icon.png');
+    const icon = await png('icon-192.png');
     assert.deepEqual([icon.width, icon.height], [192, 192]);
     const badge = await png('notify-badge.png');
     assert.deepEqual([badge.width, badge.height], [96, 96]);
     assert.equal(badge.colorType, 6, 'the badge has an alpha channel: Android keeps only its shape');
-    // The service worker points at exactly these two.
+    // The service worker points at the app icon and the badge.
     const sw = await (await fetch(`${ctx.base}/sw.js`)).text();
-    assert.match(sw, /icon: '\/notify-icon\.png'/);
+    assert.match(sw, /icon: '\/icon-192\.png'/);
     assert.match(sw, /badge: '\/notify-badge\.png'/);
   } finally {
     await ctx.app.close();
