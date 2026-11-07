@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mulberry32, cardId, FIRST_JOKER, DECK_SIZE } from '../src/cards.js';
+import { mulberry32, cardId, suitOf, FIRST_JOKER, DECK_SIZE } from '../src/cards.js';
 import { classify, baseKey, beats, SINGLE } from '../src/hands.js';
 import { newGame, legalMoves, validatePlay } from '../src/game.js';
 import { greedyMove } from '../src/ai/greedy.js';
@@ -44,6 +44,9 @@ function checkRealWins(real, jokerCount, rng, stats) {
   const r = classify(real);
   const j = classify(withJokers);
   if (!r || !j || r.type !== j.type || baseKey(r) !== baseKey(j)) return;
+  // A pair is decided by its higher card, and there is only one real spade of each rank. If the joker hand still holds
+  // the real spade, the real hand holds the very same card, so the two can never be on the table together.
+  if (r.type === 'pair' && withJokers.some((c) => c < FIRST_JOKER && suitOf(c) === 3)) return;
   stats[r.type] = (stats[r.type] || 0) + 1;
   assert.ok(beats(r, j), `real ${real} should beat ${withJokers}`);
   assert.ok(!beats(j, r), `${withJokers} must not beat real ${real}`);
