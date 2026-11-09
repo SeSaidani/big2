@@ -3,6 +3,7 @@
 
 import { isJoker, suitOf, isRedSuit, cardName, sortByRank, sortBySuit } from './cards.js';
 import { cardSVG } from './card-art.js';
+import { serializeSolo, readSavedSolo } from './solo-save.js';
 import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
 import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip } from './game.js';
@@ -41,6 +42,7 @@ let game = null;
 let selected = new Set();
 let shownTrick = null; // stays visible briefly after a trick closes
 let seatActions = noActions(4);
+let soloLog = []; // the lines of the solo game's log, oldest first (kept with the saved game)
 let thinking = -1;
 let busy = false;
 let gen = 0; // bumps on New game so stale async work is dropped
@@ -368,6 +370,7 @@ function log(text, cls = '', cards = null) {
     li.appendChild(span);
   }
   $('log').prepend(li);
+  if (mode === 'solo') soloLog.push({ text, cls, cards });
 }
 
 // ---------- Turn flow ----------
@@ -388,11 +391,80 @@ function startGame() {
   thinking = -1;
   busy = false;
   $('log').innerHTML = '';
+  soloLog = [];
   $('overlay').hidden = true;
   const opener = game.turn === 0 ? 'You have the 3♦ and lead.' : `${NAMES[game.turn]} has the 3♦ and leads.`;
   log(`New round. ${opener}`, 'sys');
+  saveSolo();
   continueTurn();
 }
+
+// ---- a solo game survives a trip to the online screen, and a reload ----
+// The game is kept in this browser after every move, and brought back when you return to Solo or reload. (Nothing
+// is sent to the server.) What is read back is checked first (src/solo-save.js); if anything is wrong, a new game
+// is dealt instead.
+const soloSaveKey = () => `big2.solo.${user ? user.id : 'nobody'}`;
+
+function saveSolo() {
+  if (mode !== 'solo' || !game || !soloGameId) return;
+  try {
+    localStorage.setItem(
+      soloSaveKey(),
+      serializeSolo({
+        id: soloGameId,
+        level,
+        players: game.hands.length,
+        game,
+        shownTrick,
+        seatActions,
+        log: soloLog,
+        overlay: !$('overlay').hidden,
+      }),
+    );
+  } catch {
+    /* storage is full or blocked: this game just will not survive */
+  }
+}
+
+// Returns true if a saved game was put back (and play carried on from it).
+function restoreSolo() {
+  let raw;
+  try {
+    raw = localStorage.getItem(soloSaveKey());
+  } catch {
+    return false;
+  }
+  const s = readSavedSolo(raw, Object.keys(LEVEL_LABEL));
+  if (!s) return false;
+  soloGameId = s.id;
+  level = s.level; // the settings are fixed for the whole game, so they come back with it
+  soloPlayers = s.players;
+  renderSoloChip();
+  gen++;
+  pending.clear();
+  NAMES = SOLO_NAMES[soloPlayers];
+  game = s.game;
+  selected = new Set();
+  // A play still on the table keeps its display; a closed trick has had its pause, so the table is clear.
+  const open = game.trick !== null;
+  shownTrick = open ? s.shownTrick : null;
+  seatActions = open ? s.seatActions : noActions(soloPlayers);
+  thinking = -1;
+  busy = false;
+  $('log').innerHTML = '';
+  soloLog = [];
+  for (const l of s.log) log(l.text, l.cls, l.cards); // oldest first; log() puts the newest on top
+  $('overlay').hidden = true;
+  if (game.winner >= 0) {
+    render();
+    showSoloEnd();
+    $('overlay').hidden = !s.overlay;
+    return true;
+  }
+  continueTurn(); // if it is the computer's move, it is asked again
+  return true;
+}
+window.addEventListener('pagehide', saveSolo);
 
 function myTurnMessage() {
   let msg;
@@ -454,6 +526,7 @@ async function commit(cards) {
   } else {
     log(leadPass ? `${NAMES[p]} passed the lead` : `${NAMES[p]} passed`, p === 0 ? 'you' : '');
   }
+  saveSolo(); // the move is made: keep the game as it now stands
   // The trick closed: everyone else passed, or nobody could beat the play.
   // (A lead pass also leaves the table empty, but closes nothing.)
   if (game.winner < 0 && game.trick === null && !leadPass) {
@@ -487,6 +560,13 @@ function endRound() {
     delta: scoreRound(game).delta[0],
   });
   log(w === 0 ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
+  showSoloEnd();
+  saveSolo();
+}
+
+// The result of a finished solo game: who won and what everyone else was left holding.
+function showSoloEnd() {
+  const w = game.winner;
   $('endTitle').textContent = w === 0 ? 'You win! 🎉' : `${NAMES[w]} wins`;
   const box = $('endHands');
   box.innerHTML = '';
@@ -564,7 +644,10 @@ $('helpX').addEventListener('click', () => $('helpDlg').close());
 $('againBtn').addEventListener('click', () => (mode === 'online' ? startOnlineRound() : startGame()));
 // After a solo round: choose the level and players first, just look at the table, or go to the online lobby.
 $('againNewBtn').addEventListener('click', () => $('newBtn').click());
-$('endClose').addEventListener('click', () => ($('overlay').hidden = true));
+$('endClose').addEventListener('click', () => {
+  $('overlay').hidden = true;
+  saveSolo();
+});
 // The play log (and the chat under it). Beside the table it can be folded away. On a phone there is
 // no room beside the table, so it is a sheet over it: the Log button opens it, the × closes it.
 const logPanel = document.querySelector('.log');
@@ -642,7 +725,7 @@ function enterSolo() {
   show('tableMain', true);
   show('againBtn', true); // online hides it for guests
   setModeUi('solo');
-  startGame();
+  if (!restoreSolo()) startGame();
 }
 
 // Going online takes a moment (it asks the server who you are). While that is under way, a second request, such as
@@ -656,6 +739,7 @@ function enterOnline() {
 }
 
 async function startOnline() {
+  saveSolo(); // a solo game in progress is kept for when you come back
   gen++; // drops any solo round still waiting on an AI
   busy = false;
   pending.clear();
@@ -2294,7 +2378,7 @@ async function boot() {
   for (const el of document.querySelectorAll('.dev-only')) el.hidden = !devTables;
   if (user && localStorage.getItem('big2.mode') !== 'solo') enterOnline();
   else {
-    startGame();
+    if (!restoreSolo()) startGame();
     document.body.dataset.online = 'solo'; // started in a solo game (the browser tests wait for this or 'ready')
   }
 }
