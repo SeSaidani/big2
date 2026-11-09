@@ -21,6 +21,7 @@ import {
   checkInvariants,
   initialDeals,
   moveLog,
+  normalizePasses,
 } from '../src/game.js';
 import { classify } from '../src/hands.js';
 import { NUM_PLAYERS } from '../src/cards.js';
@@ -94,6 +95,13 @@ export class Table {
       chat: data.chat || [],
       version: data.version + 1, // clients reconnecting after a restart must not ignore the first view
     });
+    // A game saved while a pass still locked you out of the trick: apply the current rule to where it stands.
+    if (t.status === 'playing' && t.game) {
+      const turnBefore = t.game.turn;
+      if (normalizePasses(t.game)) {
+        deps.log('A saved game was brought in line with the pass rule', t.id, 'turn', turnBefore, '->', t.game.turn);
+      }
+    }
     return t;
   }
 

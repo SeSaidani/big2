@@ -1,6 +1,28 @@
 // A solo game survives going to the online screen and back, and a page reload: the same cards, the same log, the
 // computer carries on, and a finished game still shows its result. A new game still deals new cards.
-import { launch, newPage, sleep, outDir, STEP } from './lib.mjs';
+import { launch, newPage, sleep, outDir, STEP, HELPERS } from './lib.mjs';
+import { mulberry32 } from '../src/cards.js';
+import { classify } from '../src/hands.js';
+import { newGame, applyMove, autoSkip, legalMoves, turnRules } from '../src/game.js';
+import { serializeSolo } from '../src/solo-save.js';
+
+// The first position, in seeded random 3-player games, where `want` holds (a copy, as the page would save it).
+function findPosition(want) {
+  for (let seed = 1; seed < 400; seed++) {
+    const rng = mulberry32(seed);
+    const g = newGame(rng, null, 3);
+    let guard = 0;
+    while (g.winner < 0 && guard++ < 300) {
+      if (want(g)) return JSON.parse(JSON.stringify(g));
+      const legal = legalMoves(g);
+      const pass = turnRules(g).canPass && (!legal.length || rng() < 0.4);
+      const m = pass ? null : legal[Math.floor(rng() * legal.length)];
+      applyMove(g, m ? m.cards : null, m ? classify(m.cards) : null);
+      if (m) autoSkip(g);
+    }
+  }
+  throw new Error('no such position found');
+}
 
 const OUT = outDir(process.argv[2]);
 const PORT = 8779;
@@ -134,6 +156,60 @@ async function main() {
     'Play again deals a new game and clears the result',
     await A.ev(`${byId('overlay')}.hidden && document.querySelectorAll('#hand .card').length > 0`),
   );
+  // ---- it says whose move it is when it is not yours: with a card picked ahead, and after you pass ----
+  // Exact positions are built by the engine and put in as saved games (the computer then takes about 0.75 s to
+  // move, long enough to read the screen), so this does not depend on how a live game happens to go.
+  const uid = await A.ev(`fetch('/api/me').then((r) => r.json()).then((j) => j.user.id)`);
+  const load = async (game, id) => {
+    const text = serializeSolo({
+      id,
+      level: 'easy',
+      players: 3,
+      game,
+      shownTrick: game.trick ? { cards: game.trick.cards, cls: game.trick.cls, by: game.trick.by } : null,
+      seatActions: [null, null, null],
+      log: [{ text: 'a position for the test', cls: 'sys', cards: null }],
+      overlay: false,
+    });
+    // The page being left saves its own solo game as it goes (that is the feature), which would overwrite this
+    // position: so leave solo first, and the page has nothing to save.
+    await A.click('modeOnline');
+    await A.waitFor(`document.body.dataset.online === 'ready' && !${byId('lobbyHome')}.hidden`, 8000, 'online');
+    await A.ev(
+      `localStorage.setItem('big2.solo.${uid}', ${JSON.stringify(text)}); localStorage.setItem('big2.mode', 'solo')`,
+    );
+    await A.ev('window.__oldPage = true'); // so the wait below cannot be satisfied by the page about to be replaced
+    await A.goto(BASE);
+    await A.waitFor(`window.__oldPage === undefined && ${inSolo}`, 15000, 'the loaded position');
+  };
+
+  // A: the computer is to move, and I pick a card ahead.
+  await load(
+    findPosition((g) => g.turn !== 0 && g.hands[0].length >= 5 && !g.first),
+    'e2e-waiting-1',
+  );
+  await A.ev(`(() => { ${HELPERS} pick(0); })()`);
+  await A.waitFor(`${byId('selInfo')}.textContent.includes('waiting for')`, 3000, 'the waiting message');
+  const picked = await A.text('selInfo');
+  check(
+    'a card picked ahead of your turn says whose move it is, instead of looking playable',
+    /waiting for (West|East)/.test(picked) && !(await A.ev(`!!document.querySelector('#selInfo .ok')`)),
+    picked,
+  );
+
+  // B: I passed on a play, and the computer is to move.
+  const passedAt = findPosition(
+    (g) =>
+      g.turn !== 0 &&
+      g.trick &&
+      g.history.length &&
+      g.history[g.history.length - 1].p === 0 &&
+      g.history[g.history.length - 1].cards === null &&
+      g.passed[0],
+  );
+  await load(passedAt, 'e2e-waiting-2');
+  await A.waitFor(`${byId('selInfo')}.textContent.includes('you passed; waiting for')`, 3000, 'the passed message');
+  check('after you pass it says so, and whose move it is', true, await A.text('selInfo'));
 }
 
 let failed = false;

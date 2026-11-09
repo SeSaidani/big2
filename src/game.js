@@ -1,9 +1,11 @@
 // Game state machine. Seats 0..n-1 play in increasing order (0 is the human); n is 3 or 4, the
 // number of hands in the state.
 //
-// - A player who passes on someone else's play is locked out of the trick
-//   until it resets; when play comes back round to the last player who
-//   played, they lead a fresh trick.
+// - A pass lasts only for that go-round: whoever passes on someone else's
+//   play may play later in the same trick, once another play has been made
+//   and the turn comes back to them. The trick ends when every other seat
+//   has passed in a row after the last play, and that player leads a fresh
+//   trick.
 // - The leader may pass the lead to the next seat. If every seat passes
 //   it in a row, it is back with the player who had it first, who must now
 //   play. The opening play (with the 3♦) cannot be passed.
@@ -140,6 +142,7 @@ export function applyMove(s, cards, cls = null) {
   s.trick = { cards, cls, by: p };
   s.first = false;
   s.leadPasses = 0;
+  s.passed = s.passed.map(() => false); // a play gives everybody another turn
   if (s.played) s.played.push(...cards);
   if (next.length === 0) {
     s.winner = p;
@@ -149,10 +152,10 @@ export function applyMove(s, cards, cls = null) {
   return s;
 }
 
-// Auto-skip: if nobody still in the trick (not passed, not the player who
-// made the current play) holds a legal play that beats it, under the full
-// rules including the last-card rule, pass them all at once and give the
-// lead straight back. Every skipped pass was forced, so outcomes are
+// Auto-skip: if nobody else (not the player who made the current play, and
+// not anyone who has passed on it since) holds a legal play that beats it,
+// under the full rules including the last-card rule, pass them all at once
+// and give the lead straight back. Every skipped pass was forced, so outcomes are
 // unchanged; history marks them `auto` because, unlike a normal pass, they
 // reveal that the player could not beat the play. Returns the skipped seats.
 // The UI and arena call this after each play; AI simulations do not need to
@@ -177,6 +180,30 @@ export function autoSkip(s) {
   s.passed = s.passed.map(() => false);
   s.turn = by;
   return pending;
+}
+
+// Brings a game that was saved under the old rule (a pass locked you out of the rest of the trick) in line with the
+// current one (a pass lasts only until the next play). The passes since the last play are read from the history, and
+// the turn goes to the first seat after that play that has not passed since it, which is where it would be had the
+// current rule always applied. Returns true if anything changed. A game with no play on the table is left alone.
+export function normalizePasses(s) {
+  if (s.winner >= 0 || !s.trick || !Array.isArray(s.history)) return false;
+  const n = s.hands.length;
+  const passed = new Array(n).fill(false);
+  for (let i = s.history.length - 1; i >= 0; i--) {
+    const e = s.history[i];
+    if (e.cards) break; // the last play: only what came after it counts
+    if (e.trick && !e.auto) passed[e.p] = true; // a pass on a play (a pass of the lead has no play to pass on)
+  }
+  let q = s.trick.by;
+  do {
+    q = (q + 1) % n;
+  } while (passed[q] && q !== s.trick.by);
+  if (q === s.trick.by) return false; // everybody else has passed: the trick is over, not a state to repair here
+  const changed = s.turn !== q || passed.some((b, i) => b !== s.passed[i]);
+  s.passed = passed;
+  s.turn = q;
+  return changed;
 }
 
 function advance(s) {

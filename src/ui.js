@@ -6,7 +6,7 @@ import { cardSVG } from './card-art.js';
 import { serializeSolo, readSavedSolo } from './solo-save.js';
 import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
-import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip } from './game.js';
+import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip, normalizePasses } from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
@@ -329,14 +329,20 @@ function renderSelection() {
   }
   const cards = [...selected];
   let canPlay = false;
+  // Whose move it is when it is not mine: said next to the selection, so a green combination is not mistaken for
+  // "you can play this now".
+  const waiting =
+    game.winner < 0 && game.turn !== 0 ? `${game.passed[0] ? 'you passed; ' : ''}waiting for ${NAMES[game.turn]}` : '';
   if (!cards.length) {
     info.innerHTML = myTurn() ? '<span class="muted">Select cards to play</span>' : '';
+    if (!myTurn() && waiting && game.passed[0]) info.innerHTML = `<span class="muted">${waiting}</span>`;
   } else {
     const cls = classify(cards);
     const err = myTurn() ? validatePlay(game, cards) : null;
     canPlay = myTurn() && !err;
     if (!cls) info.innerHTML = '<span class="bad">Not a valid combination</span>';
     else if (err) info.innerHTML = `${describe(cls)} · <span class="bad">${err}</span>`;
+    else if (waiting) info.innerHTML = `${describe(cls)} · <span class="muted">${waiting}</span>`;
     else info.innerHTML = `<span class="ok">${describe(cls)}</span>`;
   }
   $('playBtn').disabled = !canPlay;
@@ -376,6 +382,14 @@ function log(text, cls = '', cards = null) {
 // ---------- Turn flow ----------
 function renderSoloChip() {
   $('soloChip').textContent = `${soloPlayers} players · ${LEVEL_LABEL[level]}`;
+}
+
+// A new play gives every other seat another turn, so their "Pass" and "Can't beat it" markers (and any passed
+// lead) from before it no longer say anything.
+function clearOldMarkers() {
+  for (let q = 0; q < seatActions.length; q++) {
+    if (['pass', 'leadpass', 'cantbeat'].includes(seatActions[q])) seatActions[q] = null;
+  }
 }
 
 function startGame() {
@@ -444,6 +458,7 @@ function restoreSolo() {
   pending.clear();
   NAMES = SOLO_NAMES[soloPlayers];
   game = s.game;
+  normalizePasses(game); // a game saved under the old pass rule is brought in line with the current one
   selected = new Set();
   // A play still on the table keeps its display; a closed trick has had its pause, so the table is clear.
   const open = game.trick !== null;
@@ -519,7 +534,7 @@ async function commit(cards) {
   if (cards) {
     shownTrick = { cards, cls, by: p };
     // A new trick starts: clear the previous trick's lead-pass markers.
-    for (let q = 0; q < seatActions.length; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
+    clearOldMarkers();
     log(`${NAMES[p]}: ${describe(cls)}`, p === 0 ? 'you' : '', cards);
     skipped = autoSkip(game);
     for (const q of skipped) seatActions[q] = 'cantbeat';
@@ -1322,7 +1337,7 @@ function applyEvents(events, replay) {
   for (const e of events) {
     const who = NAMES[e.p];
     if (e.cards) {
-      for (let q = 0; q < seatActions.length; q++) if (seatActions[q] === 'leadpass') seatActions[q] = null;
+      clearOldMarkers();
       if (!replay) seatActions[e.p] = { cards: e.cards, cls: e.cls };
       shownTrick = { cards: e.cards, cls: e.cls, by: e.p };
       lastPlay = e;
