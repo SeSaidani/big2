@@ -6,7 +6,18 @@ import { cardSVG } from './card-art.js';
 import { serializeSolo, readSavedSolo } from './solo-save.js';
 import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
-import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip, normalizePasses, mustPass } from './game.js';
+import {
+  newGame,
+  applyMove,
+  validatePlay,
+  observe,
+  turnRules,
+  autoSkip,
+  normalizePasses,
+  mustPass,
+  initialDeals,
+  moveLog,
+} from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
@@ -664,6 +675,8 @@ function endRound() {
     players: game.hands.length,
     won: w === 0,
     delta: scoreRound(game).delta[0],
+    // The deal and every play, so the game can be studied and used for training (the server plays it again to check it).
+    record: { deals: initialDeals(game), moves: moveLog(game) },
   });
   log(w === 0 ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
   showSoloEnd();

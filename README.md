@@ -174,9 +174,19 @@ src/            cards, hands (classification and ranking), moves (legal-move gen
 src/ai/         easy (greedy), medium (heuristic planner), hard (determinised Monte Carlo tree search), worker
 server/         index.js (HTTP, SSE, admin API), table.js, lobby.js, auth.js, db.js, hub.js, ai-pool.js, admin.js (CLI)
 src/stats/      the deal model: features, statistics, and the fitted models (see docs/deal-model.md)
-tools/          arena.js (headless AI tournaments), fit-deal-model.js (fits the deal model)
+tools/          arena.js (headless AI tournaments), fit-deal-model.js (fits the deal model), export-plays.js
 test/           node --test suites
 ```
+
+**Recorded games.** Every finished online game keeps its deal and every move, and a finished solo game is reported
+with its deal and every move too (the server plays it again from the deal and refuses anything that is not a real,
+legal game with the result it claims). Each record carries the rules it was played under (`RULES_VERSION` in
+`src/game.js`; none means before that existed, played under the old pass rule). While a game is in progress, the
+server also keeps a diary of it move by move, with who was connected (`game_events`, the last 200 games, admins only,
+`GET /api/admin/game-events`). `node tools/export-plays.js [--db FILE] [--out FILE] [--games] [--all-rules]` writes the
+records as JSON lines, one per play (what the player to move knew, what they chose, who chose it, what that seat
+scored) or one per game, for study and for training the computer players. It reads the database read-only, skips
+games played under other rules, and its output is never committed: it holds what people played.
 
 `node tools/arena.js --a hard --b medium --deals 200 --iters 600 --workers 8` pits one agent against three of
 another over duplicate deals (each deal replayed with the agent in every seat) and reports the win rate with a

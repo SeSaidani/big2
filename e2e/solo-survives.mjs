@@ -3,8 +3,10 @@
 import { launch, newPage, sleep, outDir, STEP, HELPERS } from './lib.mjs';
 import { mulberry32 } from '../src/cards.js';
 import { classify } from '../src/hands.js';
-import { newGame, applyMove, autoSkip, legalMoves, turnRules, mustPass } from '../src/game.js';
+import { newGame, applyMove, autoSkip, legalMoves, turnRules, mustPass, RULES_VERSION } from '../src/game.js';
 import { serializeSolo } from '../src/solo-save.js';
+import { DatabaseSync } from 'node:sqlite';
+import { exportLines } from '../tools/export-plays.js';
 
 // The first position, in seeded random 3-player games, where `want` holds (a copy, as the page would save it).
 function findPosition(want, players = 3) {
@@ -167,6 +169,31 @@ async function main() {
     !(await A.ev(`${byId('overlay')}.hidden`)) && (await A.text('endTitle')) === title,
   );
   check('and the result had the other players left holding cards', rows === 2, `${rows} rows`);
+
+  // ---- the game the page just finished is recorded on the server, play by play, and replays ----
+  const readRecords = () => {
+    const db = new DatabaseSync(env.env.DB_FILE, { readOnly: true });
+    try {
+      return exportLines(db);
+    } finally {
+      db.close();
+    }
+  };
+  let exported = readRecords();
+  for (let i = 0; i < 25 && exported.kept < 1; i++) {
+    await sleep(200); // the browser reports the result in the background
+    exported = readRecords();
+  }
+  check(
+    'the finished solo game was recorded on the server, and replays from its deal',
+    exported.kept >= 1 && exported.skipped.replay === 0 && exported.lines.length > 10,
+    `${exported.kept} game(s), ${exported.lines.length} plays`,
+  );
+  check(
+    'and every play of it is there: the person and the two computer players',
+    new Set(exported.lines.map((l) => l.seat)).size === 3 &&
+      exported.lines.every((l) => l.rules === RULES_VERSION && l.source === 'solo'),
+  );
   await A.click('againBtn');
   await sleep(500);
   check(

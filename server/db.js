@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DECK_SIZE } from '../src/cards.js';
+import { RULES_VERSION } from '../src/game.js';
 
 const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -185,6 +186,12 @@ function migrate(db) {
   addColumn(db, 'games', 'status', "TEXT NOT NULL DEFAULT 'finished'");
   // 3 or 4. NULL for games saved before this column existed (their results rows give the count).
   addColumn(db, 'games', 'players', 'INTEGER');
+  // The rules a recorded game was played under (RULES_VERSION in src/game.js). NULL = before there was a version.
+  addColumn(db, 'games', 'rules', 'INTEGER');
+  addColumn(db, 'solo_games', 'rules', 'INTEGER');
+  // A finished solo game's deal and every play, as JSON ({ deals, moves }): for studying how games go, and for
+  // training. NULL for rounds reported before this existed or by a browser that did not send it.
+  addColumn(db, 'solo_games', 'record', 'TEXT');
   dropPhoneData(db);
   // A new database starts with one season, so there is something to rank. Existing games all fall inside it
   // (it starts at the earliest one). That happens once: after that, having no season is a choice an admin can
@@ -249,9 +256,9 @@ export function recordGame(db, { started, ended, hasAi, multiplier, seats, recor
   try {
     const g = db
       .prepare(
-        "INSERT INTO games (started, ended, has_ai, multiplier, status, players) VALUES (?, ?, ?, ?, 'finished', ?)",
+        "INSERT INTO games (started, ended, has_ai, multiplier, status, players, rules) VALUES (?, ?, ?, ?, 'finished', ?, ?)",
       )
-      .run(started, ended, hasAi ? 1 : 0, multiplier, seats.length);
+      .run(started, ended, hasAi ? 1 : 0, multiplier, seats.length, RULES_VERSION);
     const gameId = Number(g.lastInsertRowid);
     const ins = db.prepare('INSERT INTO results (game_id, seat, user_id, cards_left, delta) VALUES (?, ?, ?, ?, ?)');
     seats.forEach((s, seat) => ins.run(gameId, seat, s.userId, s.cardsLeft, s.delta));
@@ -274,14 +281,19 @@ export function recordGame(db, { started, ended, hasAi, multiplier, seats, recor
 // A saved game's deal and moves, or null for a game with no record (saved before records existed,
 // or whose record could not be saved).
 export function loadGameRecord(db, gameId) {
-  const game = db.prepare('SELECT players FROM games WHERE id = ?').get(gameId);
+  const game = db.prepare('SELECT players, rules FROM games WHERE id = ?').get(gameId);
   const dealRows = db.prepare('SELECT hand FROM game_deals WHERE game_id = ? ORDER BY seat').all(gameId);
   if (!game || !dealRows.length) return null;
   const moves = db
     .prepare('SELECT seat, cards, auto FROM game_moves WHERE game_id = ? ORDER BY ply')
     .all(gameId)
     .map((m) => ({ seat: m.seat, cards: m.cards === null ? null : JSON.parse(m.cards), auto: m.auto === 1 }));
-  return { players: game.players ?? dealRows.length, deals: dealRows.map((r) => JSON.parse(r.hand)), moves };
+  return {
+    players: game.players ?? dealRows.length,
+    rules: game.rules ?? null,
+    deals: dealRows.map((r) => JSON.parse(r.hand)),
+    moves,
+  };
 }
 
 // ---- the game diary (see game_events above) ----

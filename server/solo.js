@@ -8,6 +8,9 @@
 
 import { LEVELS } from '../src/ai/agents.js';
 import { PLAYER_COUNTS } from '../src/cards.js';
+import { replayRecord, RULES_VERSION } from '../src/game.js';
+import { scoreRound } from '../src/scoring.js';
+import { recordProblem } from './db.js';
 
 export class SoloError extends Error {
   constructor(message, status = 400) {
@@ -21,7 +24,33 @@ export class SoloError extends Error {
 export const MAX_DELTA = 320;
 const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
-// input: { clientId, level, players, won, delta } (delta: the person's points for the round, seat 0).
+// The deal and every play of the round, if the browser sent them, checked by playing the game again from its deal:
+// every card dealt once, every move legal under the current rules, the game ending with someone out, and the winner
+// and the person's points being what the result said. Anything else is refused, so what is stored can be trusted as a
+// real game. Returns the record as JSON to store, or null if none was sent.
+function checkedRecord(record, { players, won, delta }) {
+  if (record === undefined || record === null) return null;
+  const problem = recordProblem(record, players);
+  if (problem) throw new SoloError(`The record of the game is not valid: ${problem}.`);
+  let end;
+  try {
+    end = replayRecord(record);
+  } catch (err) {
+    throw new SoloError(`The record of the game cannot be played again: ${err.message}`);
+  }
+  if (end.winner < 0) throw new SoloError('The record of the game does not end with someone out.');
+  if ((end.winner === 0) !== won || scoreRound(end).delta[0] !== delta) {
+    // (the winner being you must agree with `won`, and your points with what the replayed game pays)
+    throw new SoloError('The record of the game does not match the result.');
+  }
+  return JSON.stringify({
+    deals: record.deals,
+    moves: record.moves.map((m) => ({ seat: m.seat, cards: m.cards, auto: !!m.auto })),
+  });
+}
+
+// input: { clientId, level, players, won, delta, record? } (delta: the person's points for the round, seat 0; record:
+// { deals, moves } as made by initialDeals and moveLog in src/game.js).
 // Returns true if it was new, false if this clientId had already been recorded (a retry).
 export function recordSolo(db, userId, input, now = Date.now()) {
   const { clientId, level, players, won, delta } = input || {};
@@ -34,11 +63,12 @@ export function recordSolo(db, userId, input, now = Date.now()) {
   }
   // Going out always collects from every other player, and anyone else always pays: the sign says who won.
   if (won !== delta > 0) throw new SoloError('The score does not match the result.');
+  const record = checkedRecord(input.record, { players, won, delta });
   const r = db
     .prepare(
-      'INSERT OR IGNORE INTO solo_games (user_id, client_id, level, players, won, delta, ended) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR IGNORE INTO solo_games (user_id, client_id, level, players, won, delta, ended, rules, record) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(userId, clientId, level, players, won ? 1 : 0, delta, now);
+    .run(userId, clientId, level, players, won ? 1 : 0, delta, now, RULES_VERSION, record);
   return r.changes > 0;
 }
 

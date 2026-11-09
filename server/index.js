@@ -64,6 +64,7 @@ import { isMain } from './main-module.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_BODY = 4096;
+const SOLO_BODY = 16384; // a finished solo game: its deal and every play (measured 1.5-4.5 KB; the longest are over 4 KB)
 const SESSION_MS = 30 * 24 * 3600 * 1000; // from the last use...
 const SESSION_MAX_MS = 180 * 24 * 3600 * 1000; // ...but never beyond this from sign-in
 const COOKIE = 'sid';
@@ -104,16 +105,16 @@ function sendJson(res, status, body, headers = {}) {
   res.end(text);
 }
 
-async function readJson(req) {
+async function readJson(req, max = MAX_BODY) {
   if ((req.headers['content-type'] || '').split(';')[0].trim() !== 'application/json') {
     throw new HttpError(415, 'Send application/json.');
   }
-  if (Number(req.headers['content-length']) > MAX_BODY) throw new HttpError(413, 'Request too large.');
+  if (Number(req.headers['content-length']) > max) throw new HttpError(413, 'Request too large.');
   let size = 0;
   const chunks = [];
   for await (const c of req) {
     size += c.length;
-    if (size > MAX_BODY) throw new HttpError(413, 'Request too large.');
+    if (size > max) throw new HttpError(413, 'Request too large.');
     chunks.push(c);
   }
   let v;
@@ -539,7 +540,7 @@ export function createApp(opts = {}) {
       const key = `solo:${user.id}`;
       if (!soloLimit.allowed(key)) throw new HttpError(429, 'Too many results. Try again later.');
       soloLimit.record(key);
-      const body = await readJson(req);
+      const body = await readJson(req, SOLO_BODY); // a result can carry the whole game: far more than other requests // a result can carry the whole game: far more than other requests
       recordSolo(db, user.id, body, cfg.now());
       return sendJson(res, 200, soloStats(db, user.id));
     }

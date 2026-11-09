@@ -21,6 +21,13 @@ import { NUM_PLAYERS, THREE_OF_DIAMONDS, DECK_SIZE, dealHands } from './cards.js
 import { classify, beats, singleKeyOf, singleName, SINGLE } from './hands.js';
 import { legalPlays } from './moves.js';
 
+// Which rules a game was played under. It is stored with every recorded game: replaying a record, or training on
+// records, across a rule change would quietly mix two different games. Raise it whenever a change makes a different
+// play legal or changes whose turn it is. Games recorded before there was a version have none (NULL): they were played
+// under the old pass rule (a pass shut you out of the rest of the trick) and some under the older joker-pair rule.
+//   1 = a pass lasts only for the go-round (from 2026-11-09)
+export const RULES_VERSION = 1;
+
 // Pass `hands` to start from a given deal (its length is the number of players), or `players` (3 or 4)
 // to deal a fresh one.
 export function newGame(rng = Math.random, hands = null, players = NUM_PLAYERS) {
