@@ -31,6 +31,8 @@ import {
   updateSeason,
   deleteSeason,
   endSeason,
+  listGameRounds,
+  loadGameEvents,
 } from './db.js';
 import { luckAndSkill } from './stats.js';
 import { recordSolo, soloStats } from './solo.js';
@@ -458,6 +460,14 @@ export function createApp(opts = {}) {
       audit(db, admin.id, 'update_season', season.name, seasonDetail(season));
       lobby.reconcile();
       return sendJson(res, 200, { season });
+    }
+    // The game diary: with no round, the games on record; with ?round=..., that game move by move. It holds hands.
+    if (p === '/api/admin/game-events' && m === 'GET') {
+      const round = url.searchParams.get('round');
+      if (!round) return sendJson(res, 200, { rounds: listGameRounds(db) });
+      const events = loadGameEvents(db, round);
+      if (!events.length) throw new HttpError(404, 'No such game on record.');
+      return sendJson(res, 200, { round, events });
     }
     if (p === '/api/admin/audit' && m === 'GET') {
       const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50));

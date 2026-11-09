@@ -11,6 +11,7 @@ import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
 import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
+import { createTrace, describeView } from './trace.js';
 import {
   describeDevice,
   alertState,
@@ -67,6 +68,7 @@ let playersSeason = null; // the season whose players the dialog shows
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
+const trace = createTrace(); // what this page was sent and showed, for "Copy debug info" (see trace.js)
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
 let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
@@ -377,6 +379,7 @@ function log(text, cls = '', cards = null) {
   }
   $('log').prepend(li);
   if (mode === 'solo') soloLog.push({ text, cls, cards });
+  else trace.add('log', { text, cards: cards ? [...cards] : null });
 }
 
 // ---------- Turn flow ----------
@@ -782,7 +785,35 @@ function renderAccountMenu() {
   show('alertsBtn', true);
   show('adminBtn', adminUi());
   show('viewBtn', user.isAdmin);
+  show('debugBtn', mode === 'online');
   renderViewBtn();
+}
+
+// What to send when a screen does not match the game: this page's trace and its log as shown. Never the player's
+// own hand. Copied to the clipboard, or downloaded if the browser will not allow that.
+async function copyDebugInfo() {
+  const info = {
+    when: new Date().toISOString(),
+    user: user ? user.name : null,
+    agent: navigator.userAgent,
+    visible: document.visibilityState,
+    table: table ? describeView(table) : null,
+    logShown: [...document.querySelectorAll('#log li')].map((li) => li.textContent), // newest first
+    trace: trace.dump(),
+  };
+  const text = JSON.stringify(info, null, 1);
+  const msg = $('debugMsg');
+  try {
+    await navigator.clipboard.writeText(text);
+    msg.textContent = 'Copied. Paste it into a message to Stephen.';
+  } catch {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = 'big2-debug.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    msg.textContent = 'Saved as big2-debug.json; send that file to Stephen.';
+  }
 }
 
 function beginOnline() {
@@ -808,6 +839,7 @@ function openStream() {
   eventSource = connect({
     onOpen: () => {
       acceptAny = true;
+      trace.add('open');
     },
     onLobby: ({ game, season }) => {
       lobbyGame = game;
@@ -1281,7 +1313,11 @@ function onTable(t) {
     return;
   }
   const prev = table;
-  if (!acceptAny && prev && prev.id === t.id && t.version <= prev.version) return;
+  if (!acceptAny && prev && prev.id === t.id && t.version <= prev.version) {
+    trace.add('stale', describeView(t, { kept: prev.version }));
+    return;
+  }
+  const wasAny = acceptAny;
   acceptAny = false;
   const fresh = !prev || prev.id !== t.id || (prev.status !== 'playing' && t.status === 'playing');
   table = t;
@@ -1305,6 +1341,15 @@ function onTable(t) {
   const events = newEvents(histLen, t);
   histLen = t.game.view.history.length;
   const replay = fresh && events.length > 1; // joining mid-game: log it, don't animate it
+  trace.add(
+    'view',
+    describeView(t, {
+      fresh,
+      replay,
+      any: wasAny,
+      added: events.map((e) => ({ p: e.p, cards: e.cards, auto: e.auto, leadPass: e.leadPass })),
+    }),
+  );
   if (fresh && !replay) {
     log(
       `New round. ${NAMES[game.turn]} ${isMe(game.turn) ? 'have' : 'has'} the 3♦ and ${isMe(game.turn) ? 'lead' : 'leads'}.`,
@@ -2313,6 +2358,7 @@ $('iosOk').addEventListener('click', () => $('iosDlg').close());
 $('soloStatsBtn').addEventListener('click', openSoloStats);
 $('soloStatsClose').addEventListener('click', () => $('soloStatsDlg').close());
 $('soloStatsX').addEventListener('click', () => $('soloStatsDlg').close());
+$('debugBtn').addEventListener('click', copyDebugInfo);
 $('passwordBtn').addEventListener('click', () => {
   $('pwErr').textContent = '';
   $('pwDlg').showModal();

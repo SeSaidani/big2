@@ -26,7 +26,7 @@ import {
 import { classify } from '../src/hands.js';
 import { NUM_PLAYERS } from '../src/cards.js';
 import { scoreRound, forfeitPenalty } from '../src/scoring.js';
-import { recordGame, recordCancelled, recordForfeit, recordProblem } from './db.js';
+import { recordGame, recordCancelled, recordForfeit, recordProblem, addGameEvent, pruneGameEvents } from './db.js';
 
 export class TableError extends Error {
   constructor(status, message) {
@@ -70,6 +70,7 @@ export class Table {
     this.notice = null; // why the table is waiting again after a game was stopped (shown to the people still seated)
     this.seasonId = null; // the season whose players sit here (production tables)
     this.watchers = new Map(); // people watching without a seat: userId -> name (not saved: they ask again)
+    this.lastOnline = null; // who was connected at the last diary entry (not saved)
   }
 
   // `since` is when they sat down: it decides who has been seated longest.
@@ -228,6 +229,7 @@ export class Table {
     this.result = null;
     this.status = 'playing';
     this.startedAt = this.deps.cfg.now();
+    this.#logDeal();
     this.#commit(true);
   }
 
@@ -284,6 +286,7 @@ export class Table {
   cancel() {
     if (this.status === 'closed') return;
     if (this.status === 'playing') {
+      this.#event('end', { data: { why: 'cancelled' } });
       try {
         recordCancelled(this.deps.db, {
           started: this.startedAt,
@@ -315,16 +318,78 @@ export class Table {
 
   // Someone connected or disconnected: views show who is online.
   touch() {
+    if (this.status === 'playing') {
+      const online = this.#online();
+      if (JSON.stringify(online) !== this.lastOnline) this.#event('conn', { data: { online } });
+    }
     this.#changed(false, false);
   }
 
   // ---- internals ----
 
+  // The game diary (see game_events in db.js). It is only for finding out what went wrong, so a failure to write
+  // to it is logged and never reaches the game.
+  #round() {
+    return `${this.id}-${this.startedAt}`;
+  }
+
+  #online() {
+    return this.seats.map((s) => (s.kind === 'human' ? this.deps.isOnline(s.userId) : null));
+  }
+
+  #event(kind, { seat = null, cards = null, auto = false, data = null } = {}) {
+    try {
+      if (kind === 'conn' || kind === 'deal' || kind === 'move') this.lastOnline = JSON.stringify(this.#online());
+      addGameEvent(this.deps.db, { round: this.#round(), at: this.deps.cfg.now(), kind, seat, cards, auto, data });
+    } catch (err) {
+      this.deps.log('Could not write the game diary', err);
+    }
+  }
+
+  #logDeal() {
+    this.#event('deal', {
+      data: {
+        seats: this.seats.map((s) => ({ kind: s.kind, name: s.name, userId: s.userId ?? null })),
+        hands: this.game.hands.map((h) => [...h]),
+        turn: this.game.turn,
+        online: this.#online(),
+      },
+    });
+    try {
+      pruneGameEvents(this.deps.db);
+    } catch (err) {
+      this.deps.log('Could not tidy the game diary', err);
+    }
+  }
+
+  // Every entry the engine added to its history since `before`, in order: a play, a pass, or an automatic pass. The
+  // last one also says where the game stands, so a gap in what a player saw can be checked against it.
+  #logMoves(before) {
+    const added = this.game.history.slice(before);
+    added.forEach((e, i) => {
+      const last = i === added.length - 1;
+      this.#event('move', {
+        seat: e.p,
+        cards: e.cards,
+        auto: !!e.auto,
+        data: {
+          n: before + i,
+          online: this.#online(),
+          ...(last
+            ? { turn: this.game.turn, winner: this.game.winner, counts: this.game.hands.map((h) => h.length) }
+            : {}),
+        },
+      });
+    });
+  }
+
   #play(cards) {
     const cls = cards && cards.length ? classify(cards) : null;
+    const before = this.game.history.length;
     applyMove(this.game, cards, cls);
     if (cls) autoSkip(this.game);
     checkInvariants(this.game);
+    this.#logMoves(before);
     if (this.game.winner >= 0) return this.#finish();
     this.#commit(false);
   }
@@ -426,6 +491,7 @@ export class Table {
     this.result = null;
     this.status = 'playing';
     this.startedAt = this.deps.cfg.now();
+    this.#logDeal();
     this.#commit(true);
   }
 
@@ -434,6 +500,7 @@ export class Table {
   #forfeit(i) {
     const seat = this.seats[i];
     const players = this.seats.length;
+    this.#event('end', { seat: i, data: { why: 'forfeit', name: seat.name } });
     try {
       recordForfeit(this.deps.db, {
         userId: seat.userId,
@@ -532,6 +599,7 @@ export class Table {
     this.status = 'done';
     const r = scoreRound(this.game);
     const hasAi = this.seats.some((s) => s.kind === 'ai');
+    this.#event('end', { data: { why: 'finished', winner: r.winner, delta: r.delta } });
     let saved = true;
     // The deal and the moves are saved with the result. If they ever fail their own checks, the
     // result is still saved (a score must never be lost to a bad record) and the problem is logged.
