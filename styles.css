@@ -644,6 +644,16 @@ button.ghost {
   cursor: default;
 }
 
+/* A card being carried to a new place: out of the hand, a little see-through so the gap it will fill shows. */
+.hand .card.carried {
+  --lift: -40px;
+
+  opacity: 0.7;
+  cursor: grabbing;
+  box-shadow: 0 14px 22px rgb(0 0 0 / 55%);
+  transition: none;
+}
+
 .actions {
   display: flex;
   gap: 8px;

@@ -12,6 +12,7 @@ import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
 import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
 import { createTrace, describeView } from './trace.js';
+import { applyOrder, moveCard, slotAfter } from './hand-order.js';
 import {
   describeDevice,
   alertState,
@@ -48,6 +49,10 @@ let thinking = -1;
 let busy = false;
 let gen = 0; // bumps on New game so stale async work is dropped
 let sortMode = localStorage.getItem('big2.sort') || 'rank';
+// The order the player has made by hand (a list of card ids), one for the solo game and one for the online game, so
+// going to the other screen and back keeps it. Every new deal clears it: the hand starts sorted.
+const orders = { solo: null, online: null };
+let lift = null; // a card being carried to a new place: { id, from, at, order }
 const LEVEL_LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 let level = localStorage.getItem('big2.level');
 if (!(level in LEVEL_LABEL)) level = 'medium'; // a stale or edited stored value must not reach the AI
@@ -218,16 +223,25 @@ const watching = () => !!table && !!table.spectator;
 const isMe = (p) => p === 0 && !watching();
 const myTurn = () => !!game && game.winner < 0 && game.turn === 0 && !busy && !sending && !watching();
 
+// My cards left to right: while one is being carried, as it would land; else the order I made; else the sort.
+function shownHand() {
+  if (lift) return lift.order;
+  const mine = orders[mode];
+  if (mine) return applyOrder(mine, game.hands[0]);
+  return sortMode === 'rank' ? sortByRank(game.hands[0]) : sortBySuit(game.hands[0]);
+}
+
 function renderHand() {
   const handEl = $('hand');
   handEl.innerHTML = '';
   handEl.classList.toggle('disabled', !myTurn());
-  const cards = watching() ? [] : sortMode === 'rank' ? sortByRank(game.hands[0]) : sortBySuit(game.hands[0]);
+  const cards = watching() ? [] : shownHand();
   const deg = PHONE.matches ? 2.3 : 3; // a gentler curve keeps 14 cards inside a phone's width
   cards.forEach((c, i) => {
     const el = fanStyle(cardEl(c), i, cards.length, deg);
     el.dataset.id = String(c);
     if (selected.has(c)) el.classList.add('selected');
+    if (lift && lift.id === c) el.classList.add('carried');
     handEl.appendChild(el); // taps and swipes are handled on the hand itself (below)
   });
   const me = $('seat-0');
@@ -298,28 +312,85 @@ const slotAt = (x, y) => {
 function dragOver(id) {
   if (!drag || id === null || drag.seen.has(id) || game.winner >= 0) return;
   drag.seen.add(id);
+  drag.undo.push([id, selected.has(id)]);
   if (drag.select) selected.add(id);
   else selected.delete(id);
+  render();
+}
+
+// Rearranging: hold a card for LIFT_MS without moving it more than LIFT_SLOP and it comes away from the hand; slide it
+// along and let go where you want it. A quicker swipe is still the select-swipe above, so the two never clash.
+const LIFT_MS = 250;
+const LIFT_SLOP = 8; // px
+function startLift() {
+  if (!drag || !game || watching()) return;
+  const { id, undo } = drag;
+  drag.timer = null;
+  for (const [c, was] of undo.reverse()) {
+    // the press toggled it: a carried card is not being selected
+    if (was) selected.add(c);
+    else selected.delete(c);
+  }
+  const order = shownHand();
+  const from = order.indexOf(id);
+  lift = { id, from, at: from, order, x: drag.x, step: 0 };
+  drag = null;
+  navigator.vibrate?.(12);
+  render();
+  const kids = $('hand').children; // the cards' spacing, measured once on the hand as it is
+  lift.step = kids.length > 1 ? kids[1].offsetLeft - kids[0].offsetLeft : 0;
+}
+function moveLift(x) {
+  const at = slotAfter(lift.from, x - lift.x, lift.step, lift.order.length);
+  if (at === lift.at) return;
+  lift.at = at;
+  lift.order = moveCard(lift.order, lift.id, at);
+  renderHand();
+}
+function endLift(commit) {
+  if (!lift) return;
+  const done = lift;
+  lift = null;
+  if (commit && done.at !== done.from) orders[mode] = done.order; // dropped where it was: nothing to remember
   render();
 }
 $('hand').addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const id = cardAt(e.clientX, e.clientY);
   if (id === null || !game) return;
-  drag = { select: !selected.has(id), seen: new Set() };
+  drag = { select: !selected.has(id), seen: new Set(), undo: [], id, x: e.clientX, y: e.clientY, timer: null };
   try {
     $('hand').setPointerCapture(e.pointerId); // keep receiving moves after the cards are re-rendered
   } catch {
     /* synthetic pointer: no capture needed */
   }
   dragOver(id);
+  if (drag) drag.timer = setTimeout(startLift, LIFT_MS);
 });
-$('hand').addEventListener('pointermove', (e) => drag && dragOver(slotAt(e.clientX, e.clientY)));
-for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+$('hand').addEventListener('pointermove', (e) => {
+  if (lift) return moveLift(e.clientX);
+  if (!drag) return;
+  if (drag.timer && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > LIFT_SLOP) {
+    clearTimeout(drag.timer); // it is a swipe, not a hold
+    drag.timer = null;
+  }
+  dragOver(slotAt(e.clientX, e.clientY));
+});
+$('hand').addEventListener('pointerup', () => {
+  if (drag) clearTimeout(drag.timer);
+  drag = null;
+  endLift(true);
+});
+for (const type of ['pointercancel', 'lostpointercapture']) {
   $('hand').addEventListener(type, () => {
+    if (drag) clearTimeout(drag.timer);
     drag = null;
+    endLift(false); // the browser took the gesture away (or it was never finished): the hand stays as it was
   });
 }
+// While a card is carried the finger must not scroll the page or open a menu.
+$('hand').addEventListener('touchmove', (e) => lift && e.preventDefault(), { passive: false });
+$('hand').addEventListener('contextmenu', (e) => e.preventDefault());
 
 function renderSelection() {
   const info = $('selInfo');
@@ -350,7 +421,7 @@ function renderSelection() {
   $('playBtn').disabled = !canPlay;
   $('passBtn').disabled = !(myTurn() && turnRules(game).canPass);
   $('clearBtn').disabled = selected.size === 0;
-  $('sortBtn').textContent = `Sort: ${sortMode}`;
+  $('sortBtn').textContent = orders[mode] ? 'Sort: mine' : `Sort: ${sortMode}`;
 }
 
 function render() {
@@ -402,6 +473,8 @@ function startGame() {
   pending.clear();
   NAMES = SOLO_NAMES[soloPlayers];
   game = newGame(Math.random, null, soloPlayers);
+  orders.solo = null; // a new deal: the hand starts sorted
+  lift = null;
   selected = new Set();
   shownTrick = null;
   seatActions = noActions(soloPlayers);
@@ -630,8 +703,12 @@ $('clearBtn').addEventListener('click', () => {
   render();
 });
 $('sortBtn').addEventListener('click', () => {
-  sortMode = sortMode === 'rank' ? 'suit' : 'rank';
-  localStorage.setItem('big2.sort', sortMode);
+  if (orders[mode]) {
+    orders[mode] = null; // from my own order back to the sort that was on
+  } else {
+    sortMode = sortMode === 'rank' ? 'suit' : 'rank';
+    localStorage.setItem('big2.sort', sortMode);
+  }
   render();
 });
 // The settings of a solo game are chosen here and then fixed: the header only shows them. Starting a
@@ -1303,6 +1380,8 @@ function onTable(t) {
   if (mode !== 'online') return;
   if (!t) {
     table = null;
+    orders.online = null;
+    lift = null;
     histLen = 0;
     clearTrickReset();
     clearTrickDisplay();
@@ -1332,6 +1411,8 @@ function onTable(t) {
   NAMES = seatNames(t);
   if (fresh) {
     selected = new Set();
+    orders.online = null; // a new deal: the hand starts sorted
+    lift = null;
     histLen = 0;
     clearTrickReset();
     clearTrickDisplay();
