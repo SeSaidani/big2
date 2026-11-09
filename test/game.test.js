@@ -14,7 +14,7 @@ test('3♦ holder leads and the opening must include it', () => {
   assert.match(validatePlay(s, []), /3♦/);
 });
 
-test('pass lockout and trick reset', () => {
+test('a pass lasts only for the go-round, and the trick resets when everyone else has passed in a row', () => {
   const hands = [
     [0, 10, 20, 30, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49],
     [1, 11, 21, 31, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13],
@@ -28,10 +28,13 @@ test('pass lockout and trick reset', () => {
   applyMove(s, null); // 1 passes
   applyMove(s, [14]); // 2 plays
   applyMove(s, null); // 3 passes
-  // 0 has not passed, 1 and 3 are locked out.
   assert.equal(s.turn, 0);
-  applyMove(s, null);
-  // Everyone else passed: player 2 leads a fresh trick.
+  applyMove(s, null); // 0 passes
+  // 1 passed before 2's play, which gave everyone another turn: 1 is not locked out.
+  assert.equal(s.turn, 1);
+  assert.equal(validatePlay(s, [21]), null);
+  applyMove(s, null); // 1 passes again
+  // Everyone else has now passed in a row: player 2 leads a fresh trick.
   assert.equal(s.turn, 2);
   assert.equal(s.trick, null);
   assert.deepEqual(s.passed, [false, false, false, false]);
@@ -155,14 +158,15 @@ test('auto-skip: an unbeatable play goes straight back to its player', () => {
   applyMove(s, null); // seat 1
   applyMove(s, null); // seat 2
   applyMove(s, [52]); // seat 3
-  assert.deepEqual(autoSkip(s), [0]); // 1 and 2 already passed: only 0 pending
+  // A pass lasts only for the go-round, so 1 and 2 are asked again, and none of the three can beat it.
+  assert.deepEqual(autoSkip(s), [0, 1, 2]);
   assert.equal(s.turn, 3);
   assert.equal(s.trick, null);
   assert.deepEqual(s.passed, [false, false, false, false]);
   const autos = s.history.filter((e) => e.auto);
   assert.deepEqual(
     autos.map((e) => e.p),
-    [0],
+    [0, 1, 2],
   );
 });
 

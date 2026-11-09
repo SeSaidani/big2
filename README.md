@@ -156,7 +156,7 @@ spare cards go to the holders of the 3♦ and the 2♠ (the scoring bands stretc
 Ranks 3 < … < K < A < 2; suits ♦ < ♣ < ♥ < ♠. The 3♦ opens.
 Singles, pairs, triples and five-card hands (straight, flush, full house, four of a kind + kicker, straight flush,
 five of a kind). A straight is worth its highest card; ace and 2 are low in A-2-3-4-5 and 2-3-4-5-6, the two weakest
-straights. You can pass even with the lead. If the next player has one card left, a single must be your highest. A
+straights. You can pass even with the lead, and a pass lasts only for that go-round: if someone then plays and the turn comes back to you, you can play. The trick ends when everyone else has passed in a row. If the next player has one card left, a single you play must be your highest (you may still pass). A
 real card always beats a joker standing for the same thing: a joker hand ranks as the hand its jokers represent, and
 the real hand wins any exact tie. So nothing beats the real 2♠, a lone joker is a 2♠ that loses to it (but beats the
 2♥ and everything below), and two jokers cannot beat each other. A pair is decided by its higher card, as in ordinary Big
