@@ -19,6 +19,7 @@ import {
   turnRules,
   legalMoves,
   checkInvariants,
+  mustPass,
   initialDeals,
   moveLog,
   normalizePasses,
@@ -364,7 +365,7 @@ export class Table {
 
   // Every entry the engine added to its history since `before`, in order: a play, a pass, or an automatic pass. The
   // last one also says where the game stands, so a gap in what a player saw can be checked against it.
-  #logMoves(before) {
+  #logMoves(before, why = null) {
     const added = this.game.history.slice(before);
     added.forEach((e, i) => {
       const last = i === added.length - 1;
@@ -375,6 +376,7 @@ export class Table {
         data: {
           n: before + i,
           online: this.#online(),
+          ...(why && i === 0 ? { why } : {}),
           ...(last
             ? { turn: this.game.turn, winner: this.game.winner, counts: this.game.hands.map((h) => h.length) }
             : {}),
@@ -383,13 +385,14 @@ export class Table {
     });
   }
 
-  #play(cards) {
+  // `why` is only for the diary: a pass the table made for someone says so there.
+  #play(cards, why = null) {
     const cls = cards && cards.length ? classify(cards) : null;
     const before = this.game.history.length;
     applyMove(this.game, cards, cls);
     if (cls) autoSkip(this.game);
     checkInvariants(this.game);
-    this.#logMoves(before);
+    this.#logMoves(before, why);
     if (this.game.winner >= 0) return this.#finish();
     this.#commit(false);
   }
@@ -556,8 +559,15 @@ export class Table {
     const tok = this.token;
     if (seat.kind === 'human') {
       // A person's turn: the notifier may text them if they have still not played after
-      // 20 minutes, and again after 24 hours (timed from when the turn began).
+      // 20 minutes, and again after 24 hours (timed from when the turn began). It checks the turn is still waiting
+      // when it fires, so it says nothing if the table has passed for them by then.
       this.deps.notifier?.schedule(seat.userId, this.turnSince, () => tok === this.token && this.status === 'playing');
+      if (mustPass(this.game)) {
+        // Nothing in this hand can beat the play: the pass is made for them, after a short pause so the table can
+        // be followed.
+        this.timer = setTimeout(() => this.#guarded(this.#autoPass(tok)), this.deps.cfg.autoPassMs ?? 1000);
+        this.timer.unref?.();
+      }
       return;
     }
     if (seat.kind !== 'ai') return;
@@ -572,6 +582,11 @@ export class Table {
       this.deps.log('Table failed, closing', this.id, err);
       this.close();
     });
+  }
+
+  async #autoPass(tok) {
+    if (tok !== this.token || this.status !== 'playing' || !mustPass(this.game)) return;
+    this.#play(null, 'nothing to beat it with');
   }
 
   async #aiMove(tok, level) {

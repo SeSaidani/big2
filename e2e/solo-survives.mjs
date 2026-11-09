@@ -3,14 +3,14 @@
 import { launch, newPage, sleep, outDir, STEP, HELPERS } from './lib.mjs';
 import { mulberry32 } from '../src/cards.js';
 import { classify } from '../src/hands.js';
-import { newGame, applyMove, autoSkip, legalMoves, turnRules } from '../src/game.js';
+import { newGame, applyMove, autoSkip, legalMoves, turnRules, mustPass } from '../src/game.js';
 import { serializeSolo } from '../src/solo-save.js';
 
 // The first position, in seeded random 3-player games, where `want` holds (a copy, as the page would save it).
-function findPosition(want) {
+function findPosition(want, players = 3) {
   for (let seed = 1; seed < 400; seed++) {
     const rng = mulberry32(seed);
-    const g = newGame(rng, null, 3);
+    const g = newGame(rng, null, players);
     let guard = 0;
     while (g.winner < 0 && guard++ < 300) {
       if (want(g)) return JSON.parse(JSON.stringify(g));
@@ -132,22 +132,39 @@ async function main() {
   }
   const title = await A.text('endTitle');
   const rows = await A.ev(`document.querySelectorAll('#endHands .end-row').length`);
+  // What the online screen leaves in the status line when a table is waiting for someone who is away.
+  const STALE = 'Waiting for joe (offline); the game holds until they return.';
+  await A.ev(`${byId('status')}.textContent = ${JSON.stringify(STALE)}`);
   await flick();
   check(
     'after the game ends, going online and back still shows the result',
     !(await A.ev(`${byId('overlay')}.hidden`)) && (await A.text('endTitle')) === title,
     title,
   );
+  check(
+    'and the status line is about this game, not left over from the online screen',
+    /^Game over: .* wins?\.$|^Game over: you went out/.test(await A.text('status')),
+    await A.text('status'),
+  );
+  await A.click('endClose');
+  await A.ev(`${byId('status')}.textContent = ${JSON.stringify(STALE)}`);
+  await flick();
+  check(
+    'a result that was closed comes back showing after a trip online, with Play again on it',
+    !(await A.ev(`${byId('overlay')}.hidden`)) && (await A.text('endTitle')) === title,
+  );
+  check('and again no online text is left in the status line', !(await A.text('status')).includes('joe'));
   await A.click('endClose');
   await A.goto(BASE);
+  // boot() restores the saved game after it has asked the server who you are: wait for it to say it has started
   await A.waitFor(
-    `document.body.classList.contains('solo') && !${byId('tableMain')}.hidden`,
+    `document.body.dataset.online === 'solo' && !${byId('tableMain')}.hidden`,
     15000,
     'solo after a reload',
   );
   check(
-    'a reload with the result closed keeps it closed, on the same finished game',
-    await A.ev(`${byId('overlay')}.hidden`),
+    'a reload brings the result of the finished game back, the same one',
+    !(await A.ev(`${byId('overlay')}.hidden`)) && (await A.text('endTitle')) === title,
   );
   check('and the result had the other players left holding cards', rows === 2, `${rows} rows`);
   await A.click('againBtn');
@@ -164,10 +181,10 @@ async function main() {
     const text = serializeSolo({
       id,
       level: 'easy',
-      players: 3,
+      players: game.hands.length,
       game,
       shownTrick: game.trick ? { cards: game.trick.cards, cls: game.trick.cls, by: game.trick.by } : null,
-      seatActions: [null, null, null],
+      seatActions: game.hands.map(() => null),
       log: [{ text: 'a position for the test', cls: 'sys', cards: null }],
       overlay: false,
     });
@@ -210,6 +227,43 @@ async function main() {
   await load(passedAt, 'e2e-waiting-2');
   await A.waitFor(`${byId('selInfo')}.textContent.includes('you passed; waiting for')`, 3000, 'the passed message');
   check('after you pass it says so, and whose move it is', true, await A.text('selInfo'));
+
+  // ---- holding nothing that beats the play: the pass is made for you, and it is in the log ----
+  const stuck = findPosition((g) => g.turn === 0 && g.trick && g.history.length > 3 && mustPass(g));
+  await load(stuck, 'e2e-autopass');
+  check(
+    'with nothing that beats the play, it says you pass',
+    /so you pass/.test(await A.text('status')),
+    await A.text('status'),
+  );
+  await A.waitFor(
+    `[...document.querySelectorAll('#log li')].some((l) => l.textContent.startsWith('You passed'))`,
+    4000,
+    'the automatic pass in the log',
+  );
+  check('and the pass is made for you and logged as "You passed"', true);
+  check(
+    'and the game moved on from you',
+    await A.ev(`!document.getElementById('status').textContent.includes('so you pass')`),
+    await A.text('status'),
+  );
+
+  // ---- the highlight around the player to move is as wide as that player, not the whole table ----
+  await load(
+    findPosition((g) => g.turn === 2 && !g.first, 4),
+    'e2e-north',
+  );
+  const box = await A.ev(`(() => {
+    const n = document.getElementById('seat-2').getBoundingClientRect();
+    const t = document.querySelector('.table').getBoundingClientRect();
+    return { active: document.getElementById('seat-2').classList.contains('active'), seat: Math.round(n.width), table: Math.round(t.width) };
+  })()`);
+  await A.shot('3-north-to-move');
+  check(
+    'the yellow box round the player at the top is far narrower than the table',
+    box.active && box.seat < box.table / 2,
+    `${box.seat}px of ${box.table}px`,
+  );
 }
 
 let failed = false;

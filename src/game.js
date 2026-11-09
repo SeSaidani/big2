@@ -85,6 +85,13 @@ export function legalMoves(s) {
   return legalPlays(s.hands[s.turn], s.trick ? s.trick.cls : null, r.mustInclude, r.singleKey);
 }
 
+// Is the player to move facing a play they cannot beat (wrong size of hand, nothing higher, or the one-card rule
+// leaves no play), so that passing is the only move they have? Such a pass is made for them (the table and the
+// solo game both do it), as an ordinary pass: it says nothing about their cards that a pass did not already say.
+export function mustPass(s) {
+  return s.winner < 0 && !!s.trick && !s.first && turnRules(s).canPass && legalMoves(s).length === 0;
+}
+
 // Checks a proposed play by the player to move; returns an error string or null.
 export function validatePlay(s, cards) {
   if (s.winner >= 0) return 'The round is over.';

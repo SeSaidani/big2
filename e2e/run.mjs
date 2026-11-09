@@ -17,6 +17,7 @@ for (const script of [
   'alerts-solo-seasons.mjs',
   'solo-stats.mjs',
   'hand-order.mjs',
+  'solo-survives.mjs',
 ]) {
   console.log(`\n=== ${script} ===`);
   const r = spawnSync(process.execPath, [path.join(here, script), ...process.argv.slice(2)], { stdio: 'inherit' });

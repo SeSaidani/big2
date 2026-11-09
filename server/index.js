@@ -151,6 +151,8 @@ const parseId = (s) => {
 export function createApp(opts = {}) {
   const cfg = {
     aiDelayMs: opts.aiDelayMs ?? 700,
+    // How long a person who holds nothing that can beat the play on the table waits before the table passes for them.
+    autoPassMs: opts.autoPassMs ?? 1000,
     // Off in production. Development and tests turn it on to get computer seats and 3-seat tables online.
     devTables: !!opts.devTables,
     rng: opts.rng ?? secureRng,

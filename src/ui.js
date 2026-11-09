@@ -6,7 +6,7 @@ import { cardSVG } from './card-art.js';
 import { serializeSolo, readSavedSolo } from './solo-save.js';
 import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
-import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip, normalizePasses } from './game.js';
+import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip, normalizePasses, mustPass } from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
@@ -547,9 +547,11 @@ function restoreSolo() {
   for (const l of s.log) log(l.text, l.cls, l.cards); // oldest first; log() puts the newest on top
   $('overlay').hidden = true;
   if (game.winner >= 0) {
+    // A finished game comes back with its result showing (and Play again on it), whether or not it was closed.
     render();
     showSoloEnd();
-    $('overlay').hidden = !s.overlay;
+    const w = game.winner;
+    setStatus(w === 0 ? 'Game over: you went out and won.' : `Game over: ${NAMES[w]} went out and wins.`);
     return true;
   }
   continueTurn(); // if it is the computer's move, it is asked again
@@ -558,6 +560,7 @@ function restoreSolo() {
 window.addEventListener('pagehide', saveSolo);
 
 function myTurnMessage() {
+  if (mustPass(game)) return 'Nothing in your hand beats that, so you pass.'; // the pass is made for you
   let msg;
   if (game.first) msg = 'You have the 3♦: open with a play that includes it.';
   else if (game.trick) msg = `Beat ${game.trick.cls.label}, or pass.`;
@@ -577,6 +580,7 @@ async function continueTurn() {
   }
   if (game.turn === 0) {
     setStatus(myTurnMessage());
+    if (mustPass(game)) autoPassMe(g);
     return;
   }
   busy = true;
@@ -595,6 +599,17 @@ async function continueTurn() {
     cards = m ? m.cards : null;
   }
   await commit(cards);
+}
+
+// You hold nothing that beats the play on the table, so the pass is made for you after a short pause (long enough to
+// read what is on the table). It is an ordinary pass: the log says "You passed". Passing yourself first is fine.
+const AUTO_PASS_MS = 1000;
+async function autoPassMe(g) {
+  const at = game.history.length;
+  await sleep(AUTO_PASS_MS);
+  if (g !== gen || game.history.length !== at || game.turn !== 0 || game.winner >= 0 || busy) return;
+  selected = new Set();
+  await commit(null);
 }
 
 async function commit(cards) {
@@ -820,6 +835,7 @@ function enterSolo() {
   show('tableMain', true);
   show('againBtn', true); // online hides it for guests
   setModeUi('solo');
+  setStatus(''); // whatever the online screen last said (a table waiting for someone) is not about this game
   if (!restoreSolo()) startGame();
 }
 

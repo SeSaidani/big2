@@ -334,6 +334,9 @@ button.ghost {
 
 .seat-north {
   grid-area: north;
+
+  /* The row spans the whole table: without this the highlight around the player to move stretches across it. */
+  justify-self: center;
 }
 
 .seat-west {
