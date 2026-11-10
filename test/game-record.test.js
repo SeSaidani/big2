@@ -14,6 +14,7 @@ import {
   moveLog,
   replayRecord,
   checkInvariants,
+  RULES_VERSION,
 } from '../src/game.js';
 import { scoreRound } from '../src/scoring.js';
 import { openDb, recordGame, recordCancelled, recordProblem, loadGameRecord } from '../server/db.js';
@@ -99,7 +100,7 @@ test('a game is saved with its deal and moves in one transaction, and loads back
     const id = recordGame(db, { started: 1, ended: 2, hasAi: true, multiplier: 1, seats: seatsOf(s), record });
     assert.equal(db.prepare('SELECT players FROM games WHERE id = ?').get(id).players, players);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM results WHERE game_id = ?').get(id).n, players);
-    assert.deepEqual(loadGameRecord(db, id), { players, ...record });
+    assert.deepEqual(loadGameRecord(db, id), { players, rules: RULES_VERSION, ...record });
     assert.equal(replayRecord(loadGameRecord(db, id)).winner, s.winner);
   }
   db.close();

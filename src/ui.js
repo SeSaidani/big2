@@ -6,11 +6,24 @@ import { cardSVG } from './card-art.js';
 import { serializeSolo, readSavedSolo } from './solo-save.js';
 import { scoreRound, forfeitPenalty } from './scoring.js';
 import { classify, describe } from './hands.js';
-import { newGame, applyMove, validatePlay, observe, turnRules, autoSkip, normalizePasses } from './game.js';
+import {
+  newGame,
+  applyMove,
+  validatePlay,
+  observe,
+  turnRules,
+  autoSkip,
+  normalizePasses,
+  mustPass,
+  initialDeals,
+  moveLog,
+} from './game.js';
 import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
-import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
+import { mirrorState, newEvents, seatNames, plainName, isComputer, isAway, unrot } from './online-view.js';
+import { createTrace, describeView } from './trace.js';
+import { applyOrder, moveCard, slotAfter } from './hand-order.js';
 import {
   describeDevice,
   alertState,
@@ -29,6 +42,7 @@ import {
 // Seats are numbered clockwise from you. At a table of four they sit West, North, East; at three, West and East.
 const SOLO_NAMES = { 4: ['You', 'West', 'North', 'East'], 3: ['You', 'West', 'East'] };
 let NAMES = SOLO_NAMES[4];
+const plain = (p) => plainName(NAMES[p]); // the seat's name for the log: no "(offline)" mark (see plainName)
 const noActions = (n) => new Array(n).fill(null);
 // The page has a North seat element; a table of three leaves it empty and puts seat 2 in the East one.
 const seatElId = (p, n) => (n === 3 && p === 2 ? 3 : p);
@@ -47,6 +61,10 @@ let thinking = -1;
 let busy = false;
 let gen = 0; // bumps on New game so stale async work is dropped
 let sortMode = localStorage.getItem('big2.sort') || 'rank';
+// The order the player has made by hand (a list of card ids), one for the solo game and one for the online game, so
+// going to the other screen and back keeps it. Every new deal clears it: the hand starts sorted.
+const orders = { solo: null, online: null };
+let lift = null; // a card being carried to a new place: { id, from, at, order }
 const LEVEL_LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 let level = localStorage.getItem('big2.level');
 if (!(level in LEVEL_LABEL)) level = 'medium'; // a stale or edited stored value must not reach the AI
@@ -67,6 +85,7 @@ let playersSeason = null; // the season whose players the dialog shows
 let viewingLobby = false; // seated, but looking at the lobby instead of the table
 let adminView = false;
 let chatMsgs = [];
+const trace = createTrace(); // what this page was sent and showed, for "Copy debug info" (see trace.js)
 let lbSeason = 'current'; // 'current' | 'all' | a season id
 let lbSort = 'points'; // 'points' (running total) | 'perGame'
 let lbView = 'standings'; // 'standings' | 'stats' (luck and skill)
@@ -216,16 +235,25 @@ const watching = () => !!table && !!table.spectator;
 const isMe = (p) => p === 0 && !watching();
 const myTurn = () => !!game && game.winner < 0 && game.turn === 0 && !busy && !sending && !watching();
 
+// My cards left to right: while one is being carried, as it would land; else the order I made; else the sort.
+function shownHand() {
+  if (lift) return lift.order;
+  const mine = orders[mode];
+  if (mine) return applyOrder(mine, game.hands[0]);
+  return sortMode === 'rank' ? sortByRank(game.hands[0]) : sortBySuit(game.hands[0]);
+}
+
 function renderHand() {
   const handEl = $('hand');
   handEl.innerHTML = '';
   handEl.classList.toggle('disabled', !myTurn());
-  const cards = watching() ? [] : sortMode === 'rank' ? sortByRank(game.hands[0]) : sortBySuit(game.hands[0]);
+  const cards = watching() ? [] : shownHand();
   const deg = PHONE.matches ? 2.3 : 3; // a gentler curve keeps 14 cards inside a phone's width
   cards.forEach((c, i) => {
     const el = fanStyle(cardEl(c), i, cards.length, deg);
     el.dataset.id = String(c);
     if (selected.has(c)) el.classList.add('selected');
+    if (lift && lift.id === c) el.classList.add('carried');
     handEl.appendChild(el); // taps and swipes are handled on the hand itself (below)
   });
   const me = $('seat-0');
@@ -296,28 +324,85 @@ const slotAt = (x, y) => {
 function dragOver(id) {
   if (!drag || id === null || drag.seen.has(id) || game.winner >= 0) return;
   drag.seen.add(id);
+  drag.undo.push([id, selected.has(id)]);
   if (drag.select) selected.add(id);
   else selected.delete(id);
+  render();
+}
+
+// Rearranging: hold a card for LIFT_MS without moving it more than LIFT_SLOP and it comes away from the hand; slide it
+// along and let go where you want it. A quicker swipe is still the select-swipe above, so the two never clash.
+const LIFT_MS = 250;
+const LIFT_SLOP = 8; // px
+function startLift() {
+  if (!drag || !game || watching()) return;
+  const { id, undo } = drag;
+  drag.timer = null;
+  for (const [c, was] of undo.reverse()) {
+    // the press toggled it: a carried card is not being selected
+    if (was) selected.add(c);
+    else selected.delete(c);
+  }
+  const order = shownHand();
+  const from = order.indexOf(id);
+  lift = { id, from, at: from, order, x: drag.x, step: 0 };
+  drag = null;
+  navigator.vibrate?.(12);
+  render();
+  const kids = $('hand').children; // the cards' spacing, measured once on the hand as it is
+  lift.step = kids.length > 1 ? kids[1].offsetLeft - kids[0].offsetLeft : 0;
+}
+function moveLift(x) {
+  const at = slotAfter(lift.from, x - lift.x, lift.step, lift.order.length);
+  if (at === lift.at) return;
+  lift.at = at;
+  lift.order = moveCard(lift.order, lift.id, at);
+  renderHand();
+}
+function endLift(commit) {
+  if (!lift) return;
+  const done = lift;
+  lift = null;
+  if (commit && done.at !== done.from) orders[mode] = done.order; // dropped where it was: nothing to remember
   render();
 }
 $('hand').addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const id = cardAt(e.clientX, e.clientY);
   if (id === null || !game) return;
-  drag = { select: !selected.has(id), seen: new Set() };
+  drag = { select: !selected.has(id), seen: new Set(), undo: [], id, x: e.clientX, y: e.clientY, timer: null };
   try {
     $('hand').setPointerCapture(e.pointerId); // keep receiving moves after the cards are re-rendered
   } catch {
     /* synthetic pointer: no capture needed */
   }
   dragOver(id);
+  if (drag) drag.timer = setTimeout(startLift, LIFT_MS);
 });
-$('hand').addEventListener('pointermove', (e) => drag && dragOver(slotAt(e.clientX, e.clientY)));
-for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+$('hand').addEventListener('pointermove', (e) => {
+  if (lift) return moveLift(e.clientX);
+  if (!drag) return;
+  if (drag.timer && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > LIFT_SLOP) {
+    clearTimeout(drag.timer); // it is a swipe, not a hold
+    drag.timer = null;
+  }
+  dragOver(slotAt(e.clientX, e.clientY));
+});
+$('hand').addEventListener('pointerup', () => {
+  if (drag) clearTimeout(drag.timer);
+  drag = null;
+  endLift(true);
+});
+for (const type of ['pointercancel', 'lostpointercapture']) {
   $('hand').addEventListener(type, () => {
+    if (drag) clearTimeout(drag.timer);
     drag = null;
+    endLift(false); // the browser took the gesture away (or it was never finished): the hand stays as it was
   });
 }
+// While a card is carried the finger must not scroll the page or open a menu.
+$('hand').addEventListener('touchmove', (e) => lift && e.preventDefault(), { passive: false });
+$('hand').addEventListener('contextmenu', (e) => e.preventDefault());
 
 function renderSelection() {
   const info = $('selInfo');
@@ -348,7 +433,7 @@ function renderSelection() {
   $('playBtn').disabled = !canPlay;
   $('passBtn').disabled = !(myTurn() && turnRules(game).canPass);
   $('clearBtn').disabled = selected.size === 0;
-  $('sortBtn').textContent = `Sort: ${sortMode}`;
+  $('sortBtn').textContent = orders[mode] ? 'Sort: mine' : `Sort: ${sortMode}`;
 }
 
 function render() {
@@ -377,6 +462,7 @@ function log(text, cls = '', cards = null) {
   }
   $('log').prepend(li);
   if (mode === 'solo') soloLog.push({ text, cls, cards });
+  else trace.add('log', { text, cards: cards ? [...cards] : null });
 }
 
 // ---------- Turn flow ----------
@@ -399,6 +485,8 @@ function startGame() {
   pending.clear();
   NAMES = SOLO_NAMES[soloPlayers];
   game = newGame(Math.random, null, soloPlayers);
+  orders.solo = null; // a new deal: the hand starts sorted
+  lift = null;
   selected = new Set();
   shownTrick = null;
   seatActions = noActions(soloPlayers);
@@ -471,9 +559,11 @@ function restoreSolo() {
   for (const l of s.log) log(l.text, l.cls, l.cards); // oldest first; log() puts the newest on top
   $('overlay').hidden = true;
   if (game.winner >= 0) {
+    // A finished game comes back with its result showing (and Play again on it), whether or not it was closed.
     render();
     showSoloEnd();
-    $('overlay').hidden = !s.overlay;
+    const w = game.winner;
+    setStatus(w === 0 ? 'Game over: you went out and won.' : `Game over: ${NAMES[w]} went out and wins.`);
     return true;
   }
   continueTurn(); // if it is the computer's move, it is asked again
@@ -482,6 +572,7 @@ function restoreSolo() {
 window.addEventListener('pagehide', saveSolo);
 
 function myTurnMessage() {
+  if (mustPass(game)) return 'Nothing in your hand beats that, so you pass.'; // the pass is made for you
   let msg;
   if (game.first) msg = 'You have the 3♦: open with a play that includes it.';
   else if (game.trick) msg = `Beat ${game.trick.cls.label}, or pass.`;
@@ -501,6 +592,7 @@ async function continueTurn() {
   }
   if (game.turn === 0) {
     setStatus(myTurnMessage());
+    if (mustPass(game)) autoPassMe(g);
     return;
   }
   busy = true;
@@ -519,6 +611,17 @@ async function continueTurn() {
     cards = m ? m.cards : null;
   }
   await commit(cards);
+}
+
+// You hold nothing that beats the play on the table, so the pass is made for you after a short pause (long enough to
+// read what is on the table). It is an ordinary pass: the log says "You passed". Passing yourself first is fine.
+const AUTO_PASS_MS = 1000;
+async function autoPassMe(g) {
+  const at = game.history.length;
+  await sleep(AUTO_PASS_MS);
+  if (g !== gen || game.history.length !== at || game.turn !== 0 || game.winner >= 0 || busy) return;
+  selected = new Set();
+  await commit(null);
 }
 
 async function commit(cards) {
@@ -573,6 +676,8 @@ function endRound() {
     players: game.hands.length,
     won: w === 0,
     delta: scoreRound(game).delta[0],
+    // The deal and every play, so the game can be studied and used for training (the server plays it again to check it).
+    record: { deals: initialDeals(game), moves: moveLog(game) },
   });
   log(w === 0 ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
   showSoloEnd();
@@ -627,8 +732,12 @@ $('clearBtn').addEventListener('click', () => {
   render();
 });
 $('sortBtn').addEventListener('click', () => {
-  sortMode = sortMode === 'rank' ? 'suit' : 'rank';
-  localStorage.setItem('big2.sort', sortMode);
+  if (orders[mode]) {
+    orders[mode] = null; // from my own order back to the sort that was on
+  } else {
+    sortMode = sortMode === 'rank' ? 'suit' : 'rank';
+    localStorage.setItem('big2.sort', sortMode);
+  }
   render();
 });
 // The settings of a solo game are chosen here and then fixed: the header only shows them. Starting a
@@ -740,6 +849,7 @@ function enterSolo() {
   show('tableMain', true);
   show('againBtn', true); // online hides it for guests
   setModeUi('solo');
+  setStatus(''); // whatever the online screen last said (a table waiting for someone) is not about this game
   if (!restoreSolo()) startGame();
 }
 
@@ -782,7 +892,35 @@ function renderAccountMenu() {
   show('alertsBtn', true);
   show('adminBtn', adminUi());
   show('viewBtn', user.isAdmin);
+  show('debugBtn', mode === 'online');
   renderViewBtn();
+}
+
+// What to send when a screen does not match the game: this page's trace and its log as shown. Never the player's
+// own hand. Copied to the clipboard, or downloaded if the browser will not allow that.
+async function copyDebugInfo() {
+  const info = {
+    when: new Date().toISOString(),
+    user: user ? user.name : null,
+    agent: navigator.userAgent,
+    visible: document.visibilityState,
+    table: table ? describeView(table) : null,
+    logShown: [...document.querySelectorAll('#log li')].map((li) => li.textContent), // newest first
+    trace: trace.dump(),
+  };
+  const text = JSON.stringify(info, null, 1);
+  const msg = $('debugMsg');
+  try {
+    await navigator.clipboard.writeText(text);
+    msg.textContent = 'Copied. Paste it into a message to Stephen.';
+  } catch {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = 'big2-debug.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    msg.textContent = 'Saved as big2-debug.json; send that file to Stephen.';
+  }
 }
 
 function beginOnline() {
@@ -808,6 +946,7 @@ function openStream() {
   eventSource = connect({
     onOpen: () => {
       acceptAny = true;
+      trace.add('open');
     },
     onLobby: ({ game, season }) => {
       lobbyGame = game;
@@ -1271,6 +1410,8 @@ function onTable(t) {
   if (mode !== 'online') return;
   if (!t) {
     table = null;
+    orders.online = null;
+    lift = null;
     histLen = 0;
     clearTrickReset();
     clearTrickDisplay();
@@ -1281,7 +1422,11 @@ function onTable(t) {
     return;
   }
   const prev = table;
-  if (!acceptAny && prev && prev.id === t.id && t.version <= prev.version) return;
+  if (!acceptAny && prev && prev.id === t.id && t.version <= prev.version) {
+    trace.add('stale', describeView(t, { kept: prev.version }));
+    return;
+  }
+  const wasAny = acceptAny;
   acceptAny = false;
   const fresh = !prev || prev.id !== t.id || (prev.status !== 'playing' && t.status === 'playing');
   table = t;
@@ -1296,6 +1441,8 @@ function onTable(t) {
   NAMES = seatNames(t);
   if (fresh) {
     selected = new Set();
+    orders.online = null; // a new deal: the hand starts sorted
+    lift = null;
     histLen = 0;
     clearTrickReset();
     clearTrickDisplay();
@@ -1305,11 +1452,22 @@ function onTable(t) {
   const events = newEvents(histLen, t);
   histLen = t.game.view.history.length;
   const replay = fresh && events.length > 1; // joining mid-game: log it, don't animate it
+  trace.add(
+    'view',
+    describeView(t, {
+      fresh,
+      replay,
+      any: wasAny,
+      added: events.map((e) => ({ p: e.p, cards: e.cards, auto: e.auto, leadPass: e.leadPass })),
+    }),
+  );
   if (fresh && !replay) {
     log(
-      `New round. ${NAMES[game.turn]} ${isMe(game.turn) ? 'have' : 'has'} the 3♦ and ${isMe(game.turn) ? 'lead' : 'leads'}.`,
+      `New round. ${plain(game.turn)} ${isMe(game.turn) ? 'have' : 'has'} the 3♦ and ${isMe(game.turn) ? 'lead' : 'leads'}.`,
       'sys',
     );
+    // Seats are shuffled for every game, so say who is next to whom this time (clockwise from you).
+    if (!t.spectator) log(`Clockwise from you: ${NAMES.slice(1).map(plainName).join(', ')}.`, 'sys');
   }
   const closed = applyEvents(events, replay);
   thinking = game.winner < 0 && game.turn !== 0 && isComputer(t, game.turn) ? game.turn : -1;
@@ -1335,7 +1493,7 @@ function applyEvents(events, replay) {
   let skipped = false;
   let lastPlay = null;
   for (const e of events) {
-    const who = NAMES[e.p];
+    const who = plain(e.p);
     if (e.cards) {
       clearOldMarkers();
       if (!replay) seatActions[e.p] = { cards: e.cards, cls: e.cls };
@@ -1357,10 +1515,10 @@ function applyEvents(events, replay) {
 
   let msg;
   if (skipped && lastPlay) {
-    const whose = isMe(lastPlay.p) ? 'your' : `${NAMES[lastPlay.p]}'s`;
-    msg = `Nobody can beat ${whose} ${describe(lastPlay.cls)}. ${isMe(lastPlay.p) ? 'You lead' : `${NAMES[lastPlay.p]} leads`} again.`;
+    const whose = isMe(lastPlay.p) ? 'your' : `${plain(lastPlay.p)}'s`;
+    msg = `Nobody can beat ${whose} ${describe(lastPlay.cls)}. ${isMe(lastPlay.p) ? 'You lead' : `${plain(lastPlay.p)} leads`} again.`;
   } else {
-    msg = `${isMe(game.turn) ? 'You win' : `${NAMES[game.turn]} wins`} the trick.`;
+    msg = `${isMe(game.turn) ? 'You win' : `${plain(game.turn)} wins`} the trick.`;
   }
   setStatus(msg);
   log(msg, 'sys');
@@ -1377,8 +1535,8 @@ function endOnlineRound(t, alreadyShown) {
   const w = game.winner;
   const r = t.result;
   setStatus('');
-  if (!alreadyShown) log(isMe(w) ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
-  $('endTitle').textContent = isMe(w) ? 'You win! 🎉' : `${NAMES[w]} wins`;
+  if (!alreadyShown) log(isMe(w) ? 'You went out. You win!' : `${plain(w)} went out and wins.`, 'sys');
+  $('endTitle').textContent = isMe(w) ? 'You win! 🎉' : `${plain(w)} wins`;
   const box = $('endHands');
   box.innerHTML = '';
   for (let p = 0; p < game.hands.length; p++) {
@@ -2313,6 +2471,7 @@ $('iosOk').addEventListener('click', () => $('iosDlg').close());
 $('soloStatsBtn').addEventListener('click', openSoloStats);
 $('soloStatsClose').addEventListener('click', () => $('soloStatsDlg').close());
 $('soloStatsX').addEventListener('click', () => $('soloStatsDlg').close());
+$('debugBtn').addEventListener('click', copyDebugInfo);
 $('passwordBtn').addEventListener('click', () => {
   $('pwErr').textContent = '';
   $('pwDlg').showModal();

@@ -62,6 +62,11 @@ export function seatNames(t) {
   });
 }
 
+// A name without the "(offline)" mark. The mark says who is connected right now, so it belongs on the seat labels and
+// the status line, not in the log, which is a record: a line written while someone's phone had dropped off would read
+// "joe (offline)" for ever, and the same person would appear under two names.
+export const plainName = (name) => name.replace(/ \(offline\)$/, '');
+
 // Is the seat at display position d played by the computer?
 export const isComputer = (t, d) => t.seats[unrot(d, t.you, t.seats.length)].kind === 'ai';
 

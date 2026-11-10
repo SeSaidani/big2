@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DECK_SIZE } from '../src/cards.js';
+import { RULES_VERSION } from '../src/game.js';
 
 const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -119,6 +120,21 @@ CREATE TABLE IF NOT EXISTS game_moves (
   auto INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (game_id, ply)
 );
+-- A diary of every game as it happens, written move by move (not when the game ends), so a game that is stopped,
+-- forfeited or restarted is still on record and so is who was connected at each step. Only for finding out what went
+-- wrong: nothing reads it back into a game. "round" names one game (the table and the moment it was dealt). It holds
+-- hands, so it is only ever read by an admin, and only the last KEEP_ROUNDS games are kept.
+CREATE TABLE IF NOT EXISTS game_events (
+  id INTEGER PRIMARY KEY,
+  round TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  seat INTEGER,
+  cards TEXT,
+  auto INTEGER NOT NULL DEFAULT 0,
+  data TEXT
+);
+CREATE INDEX IF NOT EXISTS game_events_round ON game_events(round, id);
 -- What the deal model (docs/deal-model.md) says each seat's cards were worth, per game: a win chance and
 -- expected points. "model" fingerprints the model file, so a refit recomputes instead of mixing versions.
 CREATE TABLE IF NOT EXISTS game_expectation (
@@ -170,6 +186,12 @@ function migrate(db) {
   addColumn(db, 'games', 'status', "TEXT NOT NULL DEFAULT 'finished'");
   // 3 or 4. NULL for games saved before this column existed (their results rows give the count).
   addColumn(db, 'games', 'players', 'INTEGER');
+  // The rules a recorded game was played under (RULES_VERSION in src/game.js). NULL = before there was a version.
+  addColumn(db, 'games', 'rules', 'INTEGER');
+  addColumn(db, 'solo_games', 'rules', 'INTEGER');
+  // A finished solo game's deal and every play, as JSON ({ deals, moves }): for studying how games go, and for
+  // training. NULL for rounds reported before this existed or by a browser that did not send it.
+  addColumn(db, 'solo_games', 'record', 'TEXT');
   dropPhoneData(db);
   // A new database starts with one season, so there is something to rank. Existing games all fall inside it
   // (it starts at the earliest one). That happens once: after that, having no season is a choice an admin can
@@ -234,9 +256,9 @@ export function recordGame(db, { started, ended, hasAi, multiplier, seats, recor
   try {
     const g = db
       .prepare(
-        "INSERT INTO games (started, ended, has_ai, multiplier, status, players) VALUES (?, ?, ?, ?, 'finished', ?)",
+        "INSERT INTO games (started, ended, has_ai, multiplier, status, players, rules) VALUES (?, ?, ?, ?, 'finished', ?, ?)",
       )
-      .run(started, ended, hasAi ? 1 : 0, multiplier, seats.length);
+      .run(started, ended, hasAi ? 1 : 0, multiplier, seats.length, RULES_VERSION);
     const gameId = Number(g.lastInsertRowid);
     const ins = db.prepare('INSERT INTO results (game_id, seat, user_id, cards_left, delta) VALUES (?, ?, ?, ?, ?)');
     seats.forEach((s, seat) => ins.run(gameId, seat, s.userId, s.cardsLeft, s.delta));
@@ -259,14 +281,70 @@ export function recordGame(db, { started, ended, hasAi, multiplier, seats, recor
 // A saved game's deal and moves, or null for a game with no record (saved before records existed,
 // or whose record could not be saved).
 export function loadGameRecord(db, gameId) {
-  const game = db.prepare('SELECT players FROM games WHERE id = ?').get(gameId);
+  const game = db.prepare('SELECT players, rules FROM games WHERE id = ?').get(gameId);
   const dealRows = db.prepare('SELECT hand FROM game_deals WHERE game_id = ? ORDER BY seat').all(gameId);
   if (!game || !dealRows.length) return null;
   const moves = db
     .prepare('SELECT seat, cards, auto FROM game_moves WHERE game_id = ? ORDER BY ply')
     .all(gameId)
     .map((m) => ({ seat: m.seat, cards: m.cards === null ? null : JSON.parse(m.cards), auto: m.auto === 1 }));
-  return { players: game.players ?? dealRows.length, deals: dealRows.map((r) => JSON.parse(r.hand)), moves };
+  return {
+    players: game.players ?? dealRows.length,
+    rules: game.rules ?? null,
+    deals: dealRows.map((r) => JSON.parse(r.hand)),
+    moves,
+  };
+}
+
+// ---- the game diary (see game_events above) ----
+
+export const KEEP_ROUNDS = 200;
+
+// kind: 'deal' | 'move' | 'conn' | 'end'. cards: the cards of a move (null for a pass). data: anything else, as JSON.
+export function addGameEvent(db, { round, at, kind, seat = null, cards = null, auto = false, data = null }) {
+  db.prepare('INSERT INTO game_events (round, at, kind, seat, cards, auto, data) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+    round,
+    at,
+    kind,
+    seat,
+    cards ? JSON.stringify(cards) : null,
+    auto ? 1 : 0,
+    data === null ? null : JSON.stringify(data),
+  );
+}
+
+// Keeps the most recent `keep` games (by their newest entry) and drops the rest.
+export function pruneGameEvents(db, keep = KEEP_ROUNDS) {
+  db.prepare(
+    `DELETE FROM game_events WHERE round NOT IN (
+       SELECT round FROM game_events GROUP BY round ORDER BY MAX(id) DESC LIMIT ?)`,
+  ).run(keep);
+}
+
+// The games on record, newest first: { round, from, to, events }.
+export function listGameRounds(db, limit = 50) {
+  return db
+    .prepare(
+      `SELECT round, MIN(at) AS "from", MAX(at) AS "to", COUNT(*) AS events FROM game_events
+       GROUP BY round ORDER BY MAX(id) DESC LIMIT ?`,
+    )
+    .all(limit)
+    .map((r) => ({ ...r }));
+}
+
+// One game's diary in the order it was written.
+export function loadGameEvents(db, round) {
+  return db
+    .prepare('SELECT at, kind, seat, cards, auto, data FROM game_events WHERE round = ? ORDER BY id')
+    .all(round)
+    .map((e) => ({
+      at: e.at,
+      kind: e.kind,
+      seat: e.seat,
+      cards: e.cards === null ? null : JSON.parse(e.cards),
+      auto: e.auto === 1,
+      data: e.data === null ? null : JSON.parse(e.data),
+    }));
 }
 
 // A game an admin ended: kept for the record, but with no results rows, so it

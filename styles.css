@@ -334,6 +334,9 @@ button.ghost {
 
 .seat-north {
   grid-area: north;
+
+  /* The row spans the whole table: without this the highlight around the player to move stretches across it. */
+  justify-self: center;
 }
 
 .seat-west {
@@ -642,6 +645,16 @@ button.ghost {
 
 .hand.disabled .card {
   cursor: default;
+}
+
+/* A card being carried to a new place: out of the hand, a little see-through so the gap it will fill shows. */
+.hand .card.carried {
+  --lift: -40px;
+
+  opacity: 0.7;
+  cursor: grabbing;
+  box-shadow: 0 14px 22px rgb(0 0 0 / 55%);
+  transition: none;
 }
 
 .actions {
