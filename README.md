@@ -110,6 +110,10 @@ Opening an old database erases any phone numbers and text-message records it sti
   result is that game's one swap (the lowest scorer then stays), and leaving a game in progress costs the most a round
   can (-56 for four players) and voids it for the other three. With exactly as many players as seats nobody rotates and
   nobody can leave. The result screen says who goes out and who comes in.
+- **Seating.** Every game is dealt to a fresh random order of the same people (not just the first), so nobody always sits
+  next to the same player: the neighbour decides who you pass the turn to and whose one card forces your highest single.
+  The seats do not move during a game or while its result is on screen; a game restored after a restart keeps the order
+  it started with. The log says who is next to whom (clockwise from you) at the start of each game.
 - An admin can **switch to the player view** (account menu) to see the game without the admin controls; it only hides
   them on this device, and the server still checks everything.
 - A started game **holds its seats until it finishes or an admin cancels it** (you can only leave on the result). There is no turn timer; the game waits

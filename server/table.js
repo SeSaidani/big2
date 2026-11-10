@@ -28,6 +28,7 @@ import { classify } from '../src/hands.js';
 import { NUM_PLAYERS } from '../src/cards.js';
 import { scoreRound, forfeitPenalty } from '../src/scoring.js';
 import { recordGame, recordCancelled, recordForfeit, recordProblem, addGameEvent, pruneGameEvents } from './db.js';
+import { shuffleSeats } from './seating.js';
 
 export class TableError extends Error {
   constructor(status, message) {
@@ -226,6 +227,7 @@ export class Table {
       const label = this.aiLevel[0].toUpperCase() + this.aiLevel.slice(1);
       return { kind: 'ai', level: this.aiLevel, name: `${label} bot ${bots}` };
     });
+    this.#shuffleSeating();
     this.game = newGame(this.deps.cfg.rng, null, this.seats.length);
     this.result = null;
     this.status = 'playing';
@@ -487,9 +489,19 @@ export class Table {
     this.#fillSeats(outId);
   }
 
+  // Every game is dealt to a fresh random order of the same people, so nobody always sits next to the same player (see
+  // seating.js). Only here, between games: during a game, and while the result is on screen, the seats do not move. The
+  // seat order is saved with the table, so a game that is restored after a restart keeps the order it started with.
+  // It has its own random source so it does not change which cards are dealt.
+  #shuffleSeating() {
+    if (this.deps.cfg.shuffleSeating === false) return;
+    this.seats = shuffleSeats(this.seats, this.deps.cfg.seatRng ?? secureRng);
+  }
+
   // The next game, with the same four people.
   #newRound() {
     this.notice = null;
+    this.#shuffleSeating();
     this.game = newGame(this.deps.cfg.rng, null, this.seats.length);
     this.result = null;
     this.status = 'playing';

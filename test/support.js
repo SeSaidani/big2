@@ -17,6 +17,7 @@ export async function boot(opts = {}) {
   const app = createApp({
     pool: createPool({ inline: true }),
     aiDelayMs: 0,
+    shuffleSeating: false, // tests find seats by who sat down first; the ones about shuffling turn it on
     autoPassMs: 3_600_000, // tests that play by hand do their own passing; the ones about auto-passing set this
     log: (...a) => logs.push(a),
     ...opts,

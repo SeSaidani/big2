@@ -21,7 +21,7 @@ import {
 import { heuristicMove } from './ai/heuristic.js';
 import { chooseMove } from './ai/agents.js';
 import { api, connect } from './online.js';
-import { mirrorState, newEvents, seatNames, isComputer, isAway, unrot } from './online-view.js';
+import { mirrorState, newEvents, seatNames, plainName, isComputer, isAway, unrot } from './online-view.js';
 import { createTrace, describeView } from './trace.js';
 import { applyOrder, moveCard, slotAfter } from './hand-order.js';
 import {
@@ -42,6 +42,7 @@ import {
 // Seats are numbered clockwise from you. At a table of four they sit West, North, East; at three, West and East.
 const SOLO_NAMES = { 4: ['You', 'West', 'North', 'East'], 3: ['You', 'West', 'East'] };
 let NAMES = SOLO_NAMES[4];
+const plain = (p) => plainName(NAMES[p]); // the seat's name for the log: no "(offline)" mark (see plainName)
 const noActions = (n) => new Array(n).fill(null);
 // The page has a North seat element; a table of three leaves it empty and puts seat 2 in the East one.
 const seatElId = (p, n) => (n === 3 && p === 2 ? 3 : p);
@@ -1462,9 +1463,11 @@ function onTable(t) {
   );
   if (fresh && !replay) {
     log(
-      `New round. ${NAMES[game.turn]} ${isMe(game.turn) ? 'have' : 'has'} the 3♦ and ${isMe(game.turn) ? 'lead' : 'leads'}.`,
+      `New round. ${plain(game.turn)} ${isMe(game.turn) ? 'have' : 'has'} the 3♦ and ${isMe(game.turn) ? 'lead' : 'leads'}.`,
       'sys',
     );
+    // Seats are shuffled for every game, so say who is next to whom this time (clockwise from you).
+    if (!t.spectator) log(`Clockwise from you: ${NAMES.slice(1).map(plainName).join(', ')}.`, 'sys');
   }
   const closed = applyEvents(events, replay);
   thinking = game.winner < 0 && game.turn !== 0 && isComputer(t, game.turn) ? game.turn : -1;
@@ -1490,7 +1493,7 @@ function applyEvents(events, replay) {
   let skipped = false;
   let lastPlay = null;
   for (const e of events) {
-    const who = NAMES[e.p];
+    const who = plain(e.p);
     if (e.cards) {
       clearOldMarkers();
       if (!replay) seatActions[e.p] = { cards: e.cards, cls: e.cls };
@@ -1512,10 +1515,10 @@ function applyEvents(events, replay) {
 
   let msg;
   if (skipped && lastPlay) {
-    const whose = isMe(lastPlay.p) ? 'your' : `${NAMES[lastPlay.p]}'s`;
-    msg = `Nobody can beat ${whose} ${describe(lastPlay.cls)}. ${isMe(lastPlay.p) ? 'You lead' : `${NAMES[lastPlay.p]} leads`} again.`;
+    const whose = isMe(lastPlay.p) ? 'your' : `${plain(lastPlay.p)}'s`;
+    msg = `Nobody can beat ${whose} ${describe(lastPlay.cls)}. ${isMe(lastPlay.p) ? 'You lead' : `${plain(lastPlay.p)} leads`} again.`;
   } else {
-    msg = `${isMe(game.turn) ? 'You win' : `${NAMES[game.turn]} wins`} the trick.`;
+    msg = `${isMe(game.turn) ? 'You win' : `${plain(game.turn)} wins`} the trick.`;
   }
   setStatus(msg);
   log(msg, 'sys');
@@ -1532,8 +1535,8 @@ function endOnlineRound(t, alreadyShown) {
   const w = game.winner;
   const r = t.result;
   setStatus('');
-  if (!alreadyShown) log(isMe(w) ? 'You went out. You win!' : `${NAMES[w]} went out and wins.`, 'sys');
-  $('endTitle').textContent = isMe(w) ? 'You win! 🎉' : `${NAMES[w]} wins`;
+  if (!alreadyShown) log(isMe(w) ? 'You went out. You win!' : `${plain(w)} went out and wins.`, 'sys');
+  $('endTitle').textContent = isMe(w) ? 'You win! 🎉' : `${plain(w)} wins`;
   const box = $('endHands');
   box.innerHTML = '';
   for (let p = 0; p < game.hands.length; p++) {

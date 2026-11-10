@@ -154,6 +154,9 @@ export function createApp(opts = {}) {
     aiDelayMs: opts.aiDelayMs ?? 700,
     // How long a person who holds nothing that can beat the play on the table waits before the table passes for them.
     autoPassMs: opts.autoPassMs ?? 1000,
+    // Every game is dealt to a fresh random seating of the same people (server/seating.js). seatRng: a test's own source.
+    shuffleSeating: opts.shuffleSeating ?? true,
+    seatRng: opts.seatRng,
     // Off in production. Development and tests turn it on to get computer seats and 3-seat tables online.
     devTables: !!opts.devTables,
     rng: opts.rng ?? secureRng,

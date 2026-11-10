@@ -239,7 +239,8 @@ async function main() {
   check('and is never shown a hand', (await B.ev(`document.querySelectorAll('#hand .card').length`)) === 0);
   check(
     'the bottom seat is a player with a card count, like the others',
-    (await B.text('selInfo')).includes('boss has 14 cards'),
+    // whoever the shuffle put in the bottom seat (the seats are shuffled for every game)
+    /^(boss|bob|cat|dan)( \(offline\))? has 14 cards$/.test(await B.text('selInfo')),
     await B.text('selInfo'),
   );
   check(
